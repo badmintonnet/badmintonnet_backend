@@ -26,6 +26,8 @@ public class UserInfo {
     LocalDate birthDate;
     String gender;
     String address;
+    Double latitude;
+    Double longitude;
     String bio;
     String avatarUrl;
     String phone;

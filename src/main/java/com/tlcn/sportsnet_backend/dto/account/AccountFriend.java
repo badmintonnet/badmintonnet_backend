@@ -15,4 +15,5 @@ public class AccountFriend {
     String skillLevel;
     String slug;
     Long mutualFriends;
+    String address;
 }

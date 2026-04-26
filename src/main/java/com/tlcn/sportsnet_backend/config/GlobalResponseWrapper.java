@@ -16,35 +16,42 @@ import org.springframework.core.io.Resource;
 
 @RestControllerAdvice
 public class GlobalResponseWrapper implements ResponseBodyAdvice<Object> {
+
     @Override
-    public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
-        // Không bọc nếu đã là ApiResponse hoặc là lỗi
+    public boolean supports(MethodParameter returnType,
+                            Class<? extends HttpMessageConverter<?>> converterType) {
+
         Class<?> paramType = returnType.getParameterType();
+        String packageName = returnType.getContainingClass().getPackageName();
+
         return !(paramType.equals(ApiResponse.class)
                 || paramType.equals(ErrorResponse.class)
-                || Resource.class.isAssignableFrom(paramType));
-//        return !(paramType.equals(ApiResponse.class) || paramType.equals(ErrorResponse.class));
+                || Resource.class.isAssignableFrom(paramType)
+                || packageName.contains("springdoc"));
     }
 
     @Override
-    public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType selectedContentType,
+    public Object beforeBodyWrite(Object body, MethodParameter returnType,
+                                  MediaType selectedContentType,
                                   Class<? extends HttpMessageConverter<?>> selectedConverterType,
-                                  ServerHttpRequest request, ServerHttpResponse response) {
+                                  ServerHttpRequest request,
+                                  ServerHttpResponse response) {
 
-        if (body instanceof ApiResponse || body instanceof ErrorResponse) {
+        String path = request.getURI().getPath();
+
+        if (path.startsWith("/v3/api-docs") || path.startsWith("/swagger-ui")) {
             return body;
         }
-        if (body instanceof Resource) {
+
+        if (body instanceof ApiResponse || body instanceof ErrorResponse || body instanceof Resource) {
             return body;
         }
-
 
         if (body instanceof String) {
-            ObjectMapper mapper = new ObjectMapper();
             try {
-                return mapper.writeValueAsString(ApiResponse.success(body));
+                return new ObjectMapper().writeValueAsString(ApiResponse.success(body));
             } catch (JsonProcessingException e) {
-                throw new RuntimeException("JSON processing error", e);
+                throw new RuntimeException(e);
             }
         }
 

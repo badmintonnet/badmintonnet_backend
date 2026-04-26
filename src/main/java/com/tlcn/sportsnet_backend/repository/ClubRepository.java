@@ -70,4 +70,30 @@ public interface ClubRepository extends JpaRepository<Club, String>, JpaSpecific
             @Param("role") ClubMemberRoleEnum role,
             @Param("clubStatus") ClubStatusEnum clubStatus
     );
+
+    @EntityGraph(attributePaths = {
+            "facility"
+    })
+    @Query("""
+            SELECT c FROM Club c
+            JOIN c.facility f
+            WHERE c.visibility = :visibility
+              AND c.status = :status
+              AND f.latitude IS NOT NULL
+              AND f.longitude IS NOT NULL
+            ORDER BY (
+                6371 * acos(
+                    cos(radians(:latitude)) * cos(radians(f.latitude))
+                    * cos(radians(f.longitude) - radians(:longitude))
+                    + sin(radians(:latitude)) * sin(radians(f.latitude))
+                )
+            ) ASC
+            """)
+    List<Club> findNearestClubs(
+            @Param("visibility") ClubVisibilityEnum visibility,
+            @Param("status") ClubStatusEnum status,
+            @Param("latitude") double latitude,
+            @Param("longitude") double longitude,
+            Pageable pageable
+    );
 }

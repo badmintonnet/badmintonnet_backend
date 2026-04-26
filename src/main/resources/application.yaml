@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   servlet:
     context-path: /
   tomcat:
@@ -11,15 +11,17 @@ server:
     enabled: true
 
 spring:
+  config:
+    import: optional:file:.env[.properties]
   servlet:
     multipart:
       max-file-size: 100MB
       max-request-size: 100MB
   mail:
-    host: smtp.gmail.com
-    port: 587
-    username: bdmntnnt@gmail.com   # Gmail bạn dùng để gửi
-    password: yeec sxov qrzd lyju        # Mật khẩu ứng dụng (App Password)
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -29,9 +31,9 @@ spring:
     default-encoding: UTF-8
 
   datasource:
-    url: "jdbc:mysql://localhost:3306/sports_net"
-    username: root
-    password: root
+    url: ${DB_URL:jdbc:mysql://localhost:3306/sports_net}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 50
@@ -42,25 +44,59 @@ spring:
       ddl-auto: update
     show-sql: true
 
-   # pageable start with 1
+    # pageable start with 1
   data:
     web:
       pageable:
         one-indexed-parameters: true
 
 jwt:
-  base64-secret: b+cju49j8H8Seuyegekiu4KcJeBc9WPa2k8iSFhAznaWtfT45gWA9RfFZ6jdx6qHOGVMQKI0JQAiBsQ+jObyhw==
-  token-create-validity-in-seconds: 6400
-  token-verify-validity-in-seconds: 8640000
+  base64-secret: ${JWT_BASE64_SECRET:}
+  token-create-validity-in-seconds: ${JWT_TOKEN_CREATE_VALIDITY_SECONDS:6400}
+  token-verify-validity-in-seconds: ${JWT_TOKEN_VERIFY_VALIDITY_SECONDS:8640000}
 
 
 app:
   file:
-    upload-dir: uploads/
-    base-url: http://localhost:8080/uploads
+    upload-dir: ${APP_UPLOAD_DIR:uploads/}
+    base-url: ${APP_FILE_BASE_URL:http://localhost:8080/uploads}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+  geocoding:
+    nominatim:
+      base-url: ${NOMINATIM_BASE_URL:https://nominatim.openstreetmap.org}
+      user-agent: "${NOMINATIM_USER_AGENT:SportsNetBackend/1.0 (contact: bdmntnnt@gmail.com)}"
+      email: ${NOMINATIM_EMAIL:bdmntnnt@gmail.com}
+      accept-language: ${NOMINATIM_ACCEPT_LANGUAGE:vi,en}
+      country-codes: ${NOMINATIM_COUNTRY_CODES:vn}
+
+chatbot:
+  url: ${CHATBOT_URL:http://127.0.0.1:9000/chat}
+
+address:
+  api:
+    base-url: ${ADDRESS_API_BASE_URL:https://esgoo.net/api-tinhthanh-new}
+
+supabase:
+  url: ${SUPABASE_URL:}
+  service-key: ${SUPABASE_SERVICE_KEY:}
+  bucket: ${SUPABASE_BUCKET:}
+  base-public-url: ${SUPABASE_BASE_PUBLIC_URL:}
 
 vnpay:
-  tmnCode: "JONCE4UN"
-  hashSecret: "D9OWUJ7STM9J9MWH8T1RMWNI4DQNGCJ0"
-  returnUrl: "http://localhost:3000/payment/vnpay-return"
-  payUrl: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
+  tmnCode: ${VNPAY_TMN_CODE:}
+  hashSecret: ${VNPAY_HASH_SECRET:}
+  returnUrl: ${VNPAY_RETURN_URL:http://localhost:3000/payment/vnpay-return}
+  payUrl: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+  client-ip: ${VNPAY_CLIENT_IP:127.0.0.1}
+
+openapi:
+  server-url: ${OPENAPI_SERVER_URL:http://localhost:8080}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+    tagsSorter: alpha

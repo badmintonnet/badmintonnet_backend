@@ -48,6 +48,11 @@ public class ClubController {
         return ResponseEntity.ok(clubService.getAllMyClub(page, size));
     }
 
+    @GetMapping("/nearby")
+    public ResponseEntity<?> getNearestClubs(@RequestParam(defaultValue = "5") int top) {
+        return ResponseEntity.ok(clubService.getNearestClubs(top));
+    }
+
     @GetMapping("/my_clubs/{slug}")
     public ResponseEntity<?> getMyClubInformation(
                                                    @PathVariable String slug) {

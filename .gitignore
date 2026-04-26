@@ -32,5 +32,8 @@ build/
 ### VS Code ###
 .vscode/
 
+.env
+.env.local
+
 uploads
 src/main/resources/serviceAccountKey.json

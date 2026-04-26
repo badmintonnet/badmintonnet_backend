@@ -10,6 +10,7 @@ import com.tlcn.sportsnet_backend.enums.FriendStatusEnum;
 import com.tlcn.sportsnet_backend.error.InvalidDataException;
 import com.tlcn.sportsnet_backend.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -291,4 +292,61 @@ public class FriendshipService {
         friendshipRepository.delete(friendship);
         return "Xóa kết bạn thành công";
     }
+
+    public List<AccountFriend> getNearbyUsers(int top) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Account currentAccount = accountRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new InvalidDataException("Account not found"));
+
+        Coordinate coordinate = resolveCurrentUserCoordinate(currentAccount);
+        validateCoordinate(coordinate.latitude(), coordinate.longitude());
+        int limit = normalizeTop(top);
+
+        List<Account> accounts = accountRepository.findNearestVisibleUsers(
+                currentAccount.getId(),
+                coordinate.latitude(),
+                coordinate.longitude(),
+                PageRequest.of(0, limit)
+        );
+
+        return accounts.stream()
+                .map(x -> AccountFriend.builder()
+                        .id(x.getId())
+                        .avatarUrl(fileStorageService.getFileUrl(x.getUserInfo().getAvatarUrl(), "/avatar"))
+                        .fullName(x.getUserInfo().getFullName())
+                        .skillLevel(playerRatingRepository.findByAccount(x)
+                                .map(PlayerRating::getSkillLevel)
+                                .orElse("Chưa có"))
+                        .slug(x.getUserInfo().getSlug())
+                        .mutualFriends(friendshipRepository.countMutualFriends(currentAccount.getId(), x.getId()))
+                        .address(x.getUserInfo().getAddress())
+                        .build())
+                .toList();
+    }
+
+    private Coordinate resolveCurrentUserCoordinate(Account account) {
+        UserInfo userInfo = account.getUserInfo();
+        if (userInfo == null || userInfo.getLatitude() == null || userInfo.getLongitude() == null) {
+            throw new InvalidDataException("Vui long cap nhat dia chi de he thong xac dinh vi tri cua ban");
+        }
+        return new Coordinate(userInfo.getLatitude(), userInfo.getLongitude());
+    }
+
+    private void validateCoordinate(double latitude, double longitude) {
+        if (latitude < -90 || latitude > 90) {
+            throw new InvalidDataException("Latitude phai trong khoang -90 den 90");
+        }
+        if (longitude < -180 || longitude > 180) {
+            throw new InvalidDataException("Longitude phai trong khoang -180 den 180");
+        }
+    }
+
+    private int normalizeTop(int top) {
+        if (top <= 0) {
+            return 5;
+        }
+        return Math.min(top, 5);
+    }
+
+    private record Coordinate(double latitude, double longitude) {}
 }

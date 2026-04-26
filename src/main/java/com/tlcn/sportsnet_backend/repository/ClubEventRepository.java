@@ -78,6 +78,35 @@ public interface ClubEventRepository extends JpaRepository<ClubEvent, String>, J
             "WHERE e.club.id = :clubId")
     Long  sumTotalMemberByClubId(@Param("clubId") String clubId);
 
+    @EntityGraph(attributePaths = {
+            "facility",
+            "club"
+    })
+    @Query("""
+            SELECT e FROM ClubEvent e
+            JOIN e.facility f
+            WHERE e.openForOutside = :openForOutside
+              AND e.status = :status
+              AND e.deadline > :now
+              AND f.latitude IS NOT NULL
+              AND f.longitude IS NOT NULL
+            ORDER BY (
+                6371 * acos(
+                    cos(radians(:latitude)) * cos(radians(f.latitude))
+                    * cos(radians(f.longitude) - radians(:longitude))
+                    + sin(radians(:latitude)) * sin(radians(f.latitude))
+                )
+            ) ASC
+            """)
+    List<ClubEvent> findNearestEvents(
+            @Param("openForOutside") boolean openForOutside,
+            @Param("status") EventStatusEnum status,
+            @Param("now") LocalDateTime now,
+            @Param("latitude") double latitude,
+            @Param("longitude") double longitude,
+            Pageable pageable
+    );
+
 
 
 }

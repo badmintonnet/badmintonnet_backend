@@ -254,6 +254,25 @@ public class ClubService {
         return toClubResponse(club, account, false);
     }
 
+    public List<ClubResponse> getNearestClubs(int top) {
+        Coordinate coordinate = resolveCurrentUserCoordinate();
+        validateCoordinate(coordinate.latitude(), coordinate.longitude());
+        int limit = normalizeTop(top);
+
+        Pageable pageable = PageRequest.of(0, limit);
+        List<Club> clubs = clubRepository.findNearestClubs(
+                ClubVisibilityEnum.PUBLIC,
+                ClubStatusEnum.ACTIVE,
+                coordinate.latitude(),
+                coordinate.longitude(),
+                pageable
+        );
+
+        return clubs.stream()
+                .map(club -> toClubResponse(club, null, true))
+                .toList();
+    }
+
     private ClubResponse toClubResponse(Club club, Account account, boolean getList) {
         boolean joined = false;
         boolean owner = false;
@@ -456,4 +475,33 @@ public class ClubService {
             // Bạn có thể lưu vào DB nếu cần
         }
     }
+
+    private void validateCoordinate(double latitude, double longitude) {
+        if (latitude < -90 || latitude > 90) {
+            throw new InvalidDataException("Latitude phai trong khoang -90 den 90");
+        }
+        if (longitude < -180 || longitude > 180) {
+            throw new InvalidDataException("Longitude phai trong khoang -180 den 180");
+        }
+    }
+
+    private int normalizeTop(int top) {
+        if (top <= 0) {
+            return 5;
+        }
+        return Math.min(top, 5);
+    }
+
+    private Coordinate resolveCurrentUserCoordinate() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Account account = accountRepository.findByEmail(authentication.getName())
+                .orElseThrow(() -> new InvalidDataException("Account not found"));
+        UserInfo userInfo = account.getUserInfo();
+        if (userInfo == null || userInfo.getLatitude() == null || userInfo.getLongitude() == null) {
+            throw new InvalidDataException("Vui long cap nhat dia chi de he thong xac dinh vi tri cua ban");
+        }
+        return new Coordinate(userInfo.getLatitude(), userInfo.getLongitude());
+    }
+
+    private record Coordinate(double latitude, double longitude) {}
 }

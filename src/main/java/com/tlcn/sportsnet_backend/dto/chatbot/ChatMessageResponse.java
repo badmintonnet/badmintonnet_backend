@@ -3,12 +3,18 @@ package com.tlcn.sportsnet_backend.dto.chatbot;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.time.Instant;
+
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class ChatbotRequest {
+public class ChatMessageResponse {
+    String id;
     String sessionId;
-    String question;
+    String role;
+    String content;
+    Instant createdAt;
 }
+

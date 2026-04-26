@@ -52,6 +52,12 @@ public class ClubEventController {
         return ResponseEntity.ok(clubEventService.getAllMyJoinedClubEvents(page, size));
     }
 
+    @GetMapping("/nearby")
+    public ResponseEntity<?> getNearestEvents(
+            @RequestParam(defaultValue = "5") int top) {
+        return ResponseEntity.ok(clubEventService.getNearestEvents(top));
+    }
+
     @PostMapping("/all/public")
     public ResponseEntity<?> getAllPublicEventClub(
             @RequestParam(defaultValue = "0") int page,

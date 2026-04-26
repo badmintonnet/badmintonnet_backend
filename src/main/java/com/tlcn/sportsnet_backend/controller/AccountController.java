@@ -1,16 +1,11 @@
 package com.tlcn.sportsnet_backend.controller;
 
 import com.tlcn.sportsnet_backend.dto.ApiResponse;
-import com.tlcn.sportsnet_backend.dto.account.AccountRegisterRequest;
-import com.tlcn.sportsnet_backend.dto.account.AccountResponse;
 import com.tlcn.sportsnet_backend.dto.account.UpdateProfileRequest;
 import com.tlcn.sportsnet_backend.dto.player_rating.PlayerRatingCreateRequest;
-import com.tlcn.sportsnet_backend.entity.Account;
 import com.tlcn.sportsnet_backend.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,6 +22,8 @@ public class AccountController {
     private final ReputationHistoryService reputationHistoryService;
     private final UserScheduleService userScheduleService;
     private final PlayerTournamentHistoryService historyService;
+    private final TournamentService tournamentService;
+    private final FriendshipService friendshipService;
 
     @GetMapping
     public ResponseEntity<?> getAccount() {
@@ -97,5 +94,12 @@ public class AccountController {
     @GetMapping("/tournament-history/{id}")
     public ResponseEntity<?> getHistoryTournamentByPlayer(@PathVariable String id) {
         return ResponseEntity.ok(historyService.getHistoryByPlayer(id));
+    }
+
+
+    @GetMapping("/nearby-users")
+    public ResponseEntity<?> getNearbyUsers(
+            @RequestParam(defaultValue = "5") int top) {
+        return ResponseEntity.ok(friendshipService.getNearbyUsers(top));
     }
 }

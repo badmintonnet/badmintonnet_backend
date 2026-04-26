@@ -15,6 +15,8 @@ public class UpdateProfileRequest {
     LocalDate birthDate;
     String gender;
     String address;
+    String latitude;
+    String longitude;
     String bio;
     String avatarUrl;
     String phone;
