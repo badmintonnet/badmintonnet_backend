@@ -18,7 +18,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +32,8 @@ public class ClubTournamentService {
     private final TournamentRepository tournamentRepository;
     private final ClubTournamentParticipantRepository clubTournamentParticipantRepository;
     private final ClubTournamentRosterRepository clubTournamentRosterRepository;
+    private final TournamentCategoryRepository tournamentCategoryRepository;
+    private final TournamentMatchRepository tournamentMatchRepository;
     private final AccountRepository accountRepository;
     private final PlayerRatingRepository playerRatingRepository;
     private final FileStorageService fileStorageService;
@@ -567,6 +572,372 @@ public class ClubTournamentService {
             return buildFullResponse(participant);
         } else {
             return buildBasicResponse(participant);
+        }
+    }
+
+    // =========================================================
+    // 7. CHỌN ĐẠI DIỆN ĐƠN NAM
+    // =========================================================
+
+    @Transactional
+    public void setRepresentative(String participantId, String rosterEntryId) {
+        Account owner = getCurrentAccount();
+
+        ClubTournamentParticipant participant = clubTournamentParticipantRepository.findByIdWithDetails(participantId)
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy đăng ký CLB"));
+
+        Club club = participant.getClub();
+
+        // Verify owner permission
+        ClubMember ownerMember = clubMemberRepository.findByClubAndAccountWithAccount(club, owner);
+        if (ownerMember == null || ownerMember.getRole() != ClubMemberRoleEnum.OWNER) {
+            throw new InvalidDataException("Chỉ chủ CLB mới có thể chọn đại diện");
+        }
+
+        // Only allow setting representative before APPROVED
+        if (participant.getStatus() == ClubTournamentParticipantStatusEnum.APPROVED
+                || participant.getStatus() == ClubTournamentParticipantStatusEnum.ELIMINATED
+                || participant.getStatus() == ClubTournamentParticipantStatusEnum.CANCELLED) {
+            throw new InvalidDataException("Không thể chọn đại diện ở trạng thái " + participant.getStatus());
+        }
+
+        // Validate roster entry exists in this participant
+        List<ClubTournamentRoster> allRoster = clubTournamentRosterRepository
+                .findByClubTournamentParticipant(participant);
+        ClubTournamentRoster targetEntry = allRoster.stream()
+                .filter(r -> r.getId().equals(rosterEntryId))
+                .findFirst()
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy thành viên trong roster"));
+
+        // Reset all roster positions to null, then set this one to SINGLES
+        for (ClubTournamentRoster r : allRoster) {
+            r.setPosition(null);
+        }
+        targetEntry.setPosition("SINGLES");
+        clubTournamentRosterRepository.saveAll(allRoster);
+    }
+
+    // =========================================================
+    // 8. LẤY ĐẠI DIỆN HIỆN TẠI
+    // =========================================================
+
+    public ClubMatchParticipantResponse getRepresentative(String participantId) {
+        Account owner = getCurrentAccount();
+
+        ClubTournamentParticipant participant = clubTournamentParticipantRepository.findByIdWithDetails(participantId)
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy đăng ký CLB"));
+
+        Club club = participant.getClub();
+
+        // Verify owner
+        ClubMember ownerMember = clubMemberRepository.findByClubAndAccountWithAccount(club, owner);
+        if (ownerMember == null || ownerMember.getRole() != ClubMemberRoleEnum.OWNER) {
+            throw new InvalidDataException("Chỉ chủ CLB mới có thể xem đại diện");
+        }
+
+        Optional<ClubTournamentRoster> rep = clubTournamentRosterRepository
+                .findByClubTournamentParticipant_IdAndPosition(participantId, "SINGLES");
+
+        if (rep.isEmpty()) {
+            return null;
+        }
+
+        ClubTournamentRoster r = rep.get();
+        ClubMember cm = r.getClubMember();
+        Account acc = cm.getAccount();
+
+        return ClubMatchParticipantResponse.builder()
+                .participantId(participantId)
+                .clubId(club.getId())
+                .clubName(club.getName())
+                .clubLogoUrl(fileStorageService.getFileUrl(club.getLogoUrl(), "/club/logo"))
+                .memberId(acc.getId())
+                .memberName(acc.getUserInfo().getFullName())
+                .memberAvatarUrl(fileStorageService.getFileUrl(acc.getUserInfo().getAvatarUrl(), "/avatar"))
+                .build();
+    }
+
+    // =========================================================
+    // 9. ADMIN: TẠO BẢNG ĐẤU CLB
+    // =========================================================
+
+    @Transactional
+    public ClubBracketResponse generateClubBracket(String tournamentId) {
+        // 1. Validate admin
+        validateAdmin();
+
+        // 2. Load tournament
+        Tournament tournament = tournamentRepository.findById(tournamentId)
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy giải đấu"));
+
+        // 3. Validate participationType = CLUB
+        if (tournament.getParticipationType() != TournamentParticipationTypeEnum.CLUB) {
+            throw new InvalidDataException("Giải đấu không phải loại CLUB");
+        }
+
+        // 4. Lấy CLB đã APPROVE
+        List<ClubTournamentParticipant> approved = clubTournamentParticipantRepository
+                .findByTournamentIdAndStatus(tournamentId, ClubTournamentParticipantStatusEnum.APPROVED);
+
+        if (approved.size() < 2) {
+            throw new InvalidDataException("Cần ít nhất 2 CLB đã duyệt để tạo bảng đấu");
+        }
+
+        // 5. Build map participantId → full info
+        Map<String, RepresentativeInfo> repMap = new LinkedHashMap<>();
+        for (ClubTournamentParticipant p : approved) {
+            ClubTournamentRoster rep = clubTournamentRosterRepository
+                    .findByClubTournamentParticipant_IdAndPositionWithDetails(p.getId(), "SINGLES")
+                    .orElseThrow(() -> new InvalidDataException(
+                            "CLB " + p.getClub().getName() + " chưa chọn đại diện đơn nam"));
+
+            ClubMember cm = rep.getClubMember();
+            Account acc = cm.getAccount();
+
+            repMap.put(p.getId(), new RepresentativeInfo(
+                    p.getId(),
+                    p.getClub().getId(),
+                    p.getClub().getName(),
+                    p.getClub().getLogoUrl(),
+                    acc.getId(),
+                    acc.getUserInfo().getFullName(),
+                    acc.getUserInfo().getAvatarUrl()
+            ));
+        }
+
+        // 6. Tạo hoặc tìm TournamentCategory MEN_SINGLE
+        BadmintonCategoryEnum singlesCategory = BadmintonCategoryEnum.MEN_SINGLE;
+        TournamentCategory category = tournamentCategoryRepository
+                .findByTournamentIdAndCategory(tournamentId, singlesCategory)
+                .orElseGet(() -> {
+                    TournamentCategory newCat = TournamentCategory.builder()
+                            .tournament(tournament)
+                            .category(singlesCategory)
+                            .build();
+                    return tournamentCategoryRepository.save(newCat);
+                });
+
+        // 7. Tạo TournamentMatch entries (bracket logic)
+        List<RepresentativeInfo> reps = new ArrayList<>(repMap.values());
+        int n = reps.size();
+        int bracketSize = nextPowerOfTwo(n);
+
+        List<RepresentativeInfo> current = new ArrayList<>(reps);
+        while (current.size() < bracketSize) current.add(null);
+
+        int totalRounds = (int) (Math.log(bracketSize) / Math.log(2));
+
+        for (int round = 1; round <= totalRounds; round++) {
+            List<RepresentativeInfo> nextRound = new ArrayList<>();
+            int index = 1;
+            for (int i = 0; i < current.size(); i += 2) {
+                RepresentativeInfo p1 = current.get(i);
+                RepresentativeInfo p2 = current.get(i + 1);
+
+                TournamentMatch match = TournamentMatch.builder()
+                        .category(category)
+                        .round(round)
+                        .matchIndex(index++)
+                        .participant1Id(p1 != null ? p1.participantId() : null)
+                        .participant2Id(p2 != null ? p2.participantId() : null)
+                        .participant1Name(p1 != null ? p1.clubName() + " - " + p1.memberName() : null)
+                        .participant2Name(p2 != null ? p2.clubName() + " - " + p2.memberName() : null)
+                        .status(MatchStatus.NOT_STARTED)
+                        .build();
+                tournamentMatchRepository.save(match);
+                nextRound.add(null);
+            }
+            current = nextRound;
+        }
+
+        // 8. Trả về club-bracket tree với full info
+        return buildClubBracketResponse(category, tournament, repMap, totalRounds);
+    }
+
+    // =========================================================
+    // 10. LẤY BẢNG ĐẤU CLB (GET) - theo categoryId
+    // =========================================================
+
+    public ClubBracketResponse getClubBracket(String categoryId) {
+        TournamentCategory category = tournamentCategoryRepository.findByIdWithTournament(categoryId)
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy hạng đấu"));
+        return getClubBracketByCategory(category);
+    }
+
+    // =========================================================
+    // 10b. LẤY BẢNG ĐẤU CLB - theo tournamentId
+    // Tự động tìm category MEN_SINGLE hoặc trả về empty nếu chưa tạo
+    // =========================================================
+
+    public ClubBracketResponse getClubBracketByTournament(String tournamentId) {
+        Tournament tournament = tournamentRepository.findById(tournamentId)
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy giải đấu"));
+
+        if (tournament.getParticipationType() != TournamentParticipationTypeEnum.CLUB) {
+            throw new InvalidDataException("Giải đấu không phải loại CLUB");
+        }
+
+        // Tìm category MEN_SINGLE
+        TournamentCategory category = tournamentCategoryRepository
+                .findByTournamentIdAndCategory(tournamentId, BadmintonCategoryEnum.MEN_SINGLE)
+                .orElse(null);
+
+        // Chưa tạo category → trả về empty response
+        if (category == null) {
+            return ClubBracketResponse.builder()
+                    .tournamentId(tournament.getId())
+                    .tournamentName(tournament.getName())
+                    .categoryId(null)
+                    .categoryName(BadmintonCategoryEnum.MEN_SINGLE.getLabel())
+                    .totalRounds(0)
+                    .rounds(List.of())
+                    .build();
+        }
+
+        return getClubBracketByCategory(category);
+    }
+
+    private ClubBracketResponse getClubBracketByCategory(TournamentCategory category) {
+        Tournament tournament = category.getTournament();
+
+        // Load all approved participants với full fetch
+        List<ClubTournamentParticipant> approved = clubTournamentParticipantRepository
+                .findByTournamentIdAndStatus(tournament.getId(), ClubTournamentParticipantStatusEnum.APPROVED);
+
+        Map<String, RepresentativeInfo> repMap = new LinkedHashMap<>();
+        for (ClubTournamentParticipant p : approved) {
+            Optional<ClubTournamentRoster> rep = clubTournamentRosterRepository
+                    .findByClubTournamentParticipant_IdAndPositionWithDetails(p.getId(), "SINGLES");
+            if (rep.isPresent()) {
+                ClubTournamentRoster r = rep.get();
+                ClubMember cm = r.getClubMember();
+                Account acc = cm.getAccount();
+                repMap.put(p.getId(), new RepresentativeInfo(
+                        p.getId(),
+                        p.getClub().getId(),
+                        p.getClub().getName(),
+                        p.getClub().getLogoUrl(),
+                        acc.getId(),
+                        acc.getUserInfo().getFullName(),
+                        acc.getUserInfo().getAvatarUrl()
+                ));
+            }
+        }
+
+        List<TournamentMatch> matches = tournamentMatchRepository.findByCategory(category);
+        int totalRounds = matches.stream()
+                .mapToInt(TournamentMatch::getRound)
+                .max()
+                .orElse(0);
+
+        return buildClubBracketResponse(category, tournament, repMap, totalRounds);
+    }
+
+    // =========================================================
+    // HELPER
+    // =========================================================
+
+    private ClubBracketResponse buildClubBracketResponse(
+            TournamentCategory category,
+            Tournament tournament,
+            Map<String, RepresentativeInfo> repMap,
+            int totalRounds
+    ) {
+        List<TournamentMatch> matches = tournamentMatchRepository.findByCategory(category);
+
+        List<ClubBracketRoundResponse> rounds = new ArrayList<>();
+        for (int roundNum = 1; roundNum <= totalRounds; roundNum++) {
+            int finalRound = roundNum;
+            List<ClubBracketMatchResponse> matchResponses = matches.stream()
+                    .filter(m -> m.getRound() == finalRound)
+                    .sorted(TournamentComparator.comparingInt(TournamentMatch::getMatchIndex))
+                    .map(m -> toClubMatchResponse(m, repMap))
+                    .toList();
+
+            rounds.add(ClubBracketRoundResponse.builder()
+                    .round(roundNum)
+                    .matches(matchResponses)
+                    .build());
+        }
+
+        return ClubBracketResponse.builder()
+                .tournamentId(tournament.getId())
+                .tournamentName(tournament.getName())
+                .categoryId(category.getId())
+                .categoryName(category.getCategory().getLabel())
+                .totalRounds(totalRounds)
+                .rounds(rounds)
+                .build();
+    }
+
+    private ClubBracketMatchResponse toClubMatchResponse(
+            TournamentMatch m,
+            Map<String, RepresentativeInfo> repMap
+    ) {
+        ClubMatchParticipantResponse p1 = resolveParticipant(m.getParticipant1Id(), repMap);
+        ClubMatchParticipantResponse p2 = resolveParticipant(m.getParticipant2Id(), repMap);
+
+        return ClubBracketMatchResponse.builder()
+                .matchId(m.getId())
+                .round(m.getRound())
+                .matchIndex(m.getMatchIndex())
+                .player1(p1)
+                .player2(p2)
+                .setScoreP1(m.getSetScoreP1())
+                .setScoreP2(m.getSetScoreP2())
+                .winnerId(m.getWinnerId())
+                .winnerName(m.getWinnerName())
+                .status(m.getStatus() != null ? m.getStatus().name() : null)
+                .build();
+    }
+
+    private ClubMatchParticipantResponse resolveParticipant(String participantId, Map<String, RepresentativeInfo> repMap) {
+        if (participantId == null) return null;
+        RepresentativeInfo info = repMap.get(participantId);
+        if (info == null) return null;
+        return ClubMatchParticipantResponse.builder()
+                .participantId(info.participantId())
+                .clubId(info.clubId())
+                .clubName(info.clubName())
+                .clubLogoUrl(fileStorageService.getFileUrl(info.clubLogoUrl(), "/club/logo"))
+                .memberId(info.accountId())
+                .memberName(info.memberName())
+                .memberAvatarUrl(fileStorageService.getFileUrl(info.memberAvatarUrl(), "/avatar"))
+                .build();
+    }
+
+    private int nextPowerOfTwo(int n) {
+        int p = 1;
+        while (p < n) p *= 2;
+        return p;
+    }
+
+    // Inner record
+    private record RepresentativeInfo(
+            String participantId,
+            String clubId,
+            String clubName,
+            String clubLogoUrl,
+            String accountId,
+            String memberName,
+            String memberAvatarUrl
+    ) {}
+
+    // Comparator for TournamentMatch
+    private static class TournamentComparator implements java.util.Comparator<TournamentMatch> {
+        private final java.util.function.ToIntFunction<TournamentMatch> extractor;
+
+        private TournamentComparator(java.util.function.ToIntFunction<TournamentMatch> extractor) {
+            this.extractor = extractor;
+        }
+
+        public static TournamentComparator comparingInt(java.util.function.ToIntFunction<TournamentMatch> extractor) {
+            return new TournamentComparator(extractor);
+        }
+
+        @Override
+        public int compare(TournamentMatch a, TournamentMatch b) {
+            return Integer.compare(extractor.applyAsInt(a), extractor.applyAsInt(b));
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.tlcn.sportsnet_backend.controller;
 
+import com.tlcn.sportsnet_backend.dto.club_tournament.ClubRepresentativeRequest;
 import com.tlcn.sportsnet_backend.dto.club_tournament.ClubTournamentRegistrationRequest;
 import com.tlcn.sportsnet_backend.dto.club_tournament.UpdateRosterRequest;
 import com.tlcn.sportsnet_backend.enums.ClubTournamentParticipantStatusEnum;
@@ -111,5 +112,39 @@ public class ClubTournamentController {
     public ResponseEntity<?> rejectClubParticipant(@PathVariable String participantId) {
         clubTournamentService.rejectClubParticipant(participantId);
         return ResponseEntity.ok("CLB đã bị từ chối tham gia tournament");
+    }
+
+    // =========================================================
+    // ĐẠI DIỆN & BẢNG ĐẤU
+    // =========================================================
+
+    /**
+     * Owner CLB chọn đại diện đơn nam
+     * PUT /api/club-tournament/participants/{participantId}/set-representative
+     */
+    @PutMapping("/participants/{participantId}/set-representative")
+    public ResponseEntity<?> setRepresentative(
+            @PathVariable String participantId,
+            @RequestBody ClubRepresentativeRequest request) {
+        clubTournamentService.setRepresentative(participantId, request.getRosterEntryId());
+        return ResponseEntity.ok("Đã chọn đại diện đơn nam");
+    }
+
+    /**
+     * Owner xem đại diện hiện tại
+     * GET /api/club-tournament/participants/{participantId}/representative
+     */
+    @GetMapping("/participants/{participantId}/representative")
+    public ResponseEntity<?> getRepresentative(@PathVariable String participantId) {
+        return ResponseEntity.ok(clubTournamentService.getRepresentative(participantId));
+    }
+
+    /**
+     * Lấy bảng đấu CLB (đã tạo)
+     * GET /api/club-tournament/tournament/{tournamentId}/bracket
+     */
+    @GetMapping("/tournament/{tournamentId}/bracket")
+    public ResponseEntity<?> getClubBracket(@PathVariable String tournamentId) {
+        return ResponseEntity.ok(clubTournamentService.getClubBracketByTournament(tournamentId));
     }
 }

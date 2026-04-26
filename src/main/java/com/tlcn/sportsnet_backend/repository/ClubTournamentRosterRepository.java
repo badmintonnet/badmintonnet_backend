@@ -13,57 +13,28 @@ import java.util.Optional;
 
 @Repository
 public interface ClubTournamentRosterRepository extends JpaRepository<ClubTournamentRoster, String> {
-    
+
     // Lấy tất cả thành viên trong roster của một participant
     List<ClubTournamentRoster> findByClubTournamentParticipant(ClubTournamentParticipant participant);
-    
-    // Lấy roster theo participant ID
-    List<ClubTournamentRoster> findByClubTournamentParticipantId(String participantId);
-    
-    // Kiểm tra club member đã có trong roster chưa
-    boolean existsByClubTournamentParticipantAndClubMember(
-            ClubTournamentParticipant participant, 
-            ClubMember clubMember
-    );
-    
-    // Tìm roster entry cụ thể
-    Optional<ClubTournamentRoster> findByClubTournamentParticipantAndClubMember(
-            ClubTournamentParticipant participant,
-            ClubMember clubMember
-    );
-    
-    // Đếm số lượng members trong roster
-    int countByClubTournamentParticipant(ClubTournamentParticipant participant);
-    
-    // Lấy roster theo position
-    @Query("SELECT r FROM ClubTournamentRoster r WHERE r.clubTournamentParticipant.id = :participantId AND r.position = :position")
-    List<ClubTournamentRoster> findByParticipantIdAndPosition(
+
+    // Tìm roster entry theo participant + position (không cần fetch vì đã có)
+    @Query("SELECT r FROM ClubTournamentRoster r " +
+           "WHERE r.clubTournamentParticipant.id = :participantId " +
+           "AND r.position = :position")
+    Optional<ClubTournamentRoster> findByClubTournamentParticipant_IdAndPosition(
             @Param("participantId") String participantId,
             @Param("position") String position
     );
-    
-    // Xóa member khỏi roster
-    void deleteByClubTournamentParticipantAndClubMember(
-            ClubTournamentParticipant participant,
-            ClubMember clubMember
-    );
-    
-    // Kiểm tra club member có tham gia tournament nào không
-    @Query("""
-        SELECT r FROM ClubTournamentRoster r
-        WHERE r.clubMember.id = :clubMemberId
-        AND r.clubTournamentParticipant.tournament.id = :tournamentId
-    """)
-    List<ClubTournamentRoster> findByClubMemberIdAndTournamentId(
-            @Param("clubMemberId") String clubMemberId,
-            @Param("tournamentId") String tournamentId
-    );
 
-    // Fetch roster voi clubMember + account + userInfo
+    // Tìm roster entry với full eager fetch (clubMember + account + userInfo)
     @Query("SELECT r FROM ClubTournamentRoster r " +
            "LEFT JOIN FETCH r.clubMember cm " +
-           "LEFT JOIN FETCH cm.account a " +
-           "LEFT JOIN FETCH a.userInfo " +
-           "WHERE r.clubTournamentParticipant.id = :participantId")
-    List<ClubTournamentRoster> findByParticipantIdWithDetails(@Param("participantId") String participantId);
+           "LEFT JOIN FETCH cm.account acc " +
+           "LEFT JOIN FETCH acc.userInfo " +
+           "WHERE r.clubTournamentParticipant.id = :participantId " +
+           "AND r.position = :position")
+    Optional<ClubTournamentRoster> findByClubTournamentParticipant_IdAndPositionWithDetails(
+            @Param("participantId") String participantId,
+            @Param("position") String position
+    );
 }
