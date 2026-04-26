@@ -510,6 +510,7 @@ public class ClubTournamentService {
                 .tournamentSlug(tournament.getSlug())
                 .status(participant.getStatus())
                 .registeredAt(participant.getRegisteredAt())
+                .paid(isPaid(participant.getStatus()))
                 .rosterSize(rosterSize)
                 .build();
     }
@@ -533,9 +534,17 @@ public class ClubTournamentService {
                 .tournamentSlug(tournament.getSlug())
                 .status(participant.getStatus())
                 .registeredAt(participant.getRegisteredAt())
+                .paid(isPaid(participant.getStatus()))
                 .roster(rosterResponses)
                 .rosterSize(rosterResponses != null ? rosterResponses.size() : 0)
                 .build();
+    }
+
+    /** Tính trạng thái đã thanh toán từ status (entity không có field paid riêng) */
+    private boolean isPaid(ClubTournamentParticipantStatusEnum status) {
+        return status == ClubTournamentParticipantStatusEnum.PAID
+                || status == ClubTournamentParticipantStatusEnum.APPROVED
+                || status == ClubTournamentParticipantStatusEnum.ELIMINATED;
     }
 
     // Helper: Build roster member responses
@@ -594,11 +603,11 @@ public class ClubTournamentService {
             throw new InvalidDataException("Chỉ chủ CLB mới có thể chọn đại diện");
         }
 
-        // Only allow setting representative before APPROVED
-        if (participant.getStatus() == ClubTournamentParticipantStatusEnum.APPROVED
-                || participant.getStatus() == ClubTournamentParticipantStatusEnum.ELIMINATED
-                || participant.getStatus() == ClubTournamentParticipantStatusEnum.CANCELLED) {
-            throw new InvalidDataException("Không thể chọn đại diện ở trạng thái " + participant.getStatus());
+        // Chỉ cho phép chọn đại diện khi CLB đã thanh toán (PAID) hoặc đã được duyệt (APPROVED)
+        ClubTournamentParticipantStatusEnum status = participant.getStatus();
+        if (status != ClubTournamentParticipantStatusEnum.PAID
+                && status != ClubTournamentParticipantStatusEnum.APPROVED) {
+            throw new InvalidDataException("Chỉ có thể chọn đại diện khi CLB đã thanh toán hoặc đã được duyệt");
         }
 
         // Validate roster entry exists in this participant
