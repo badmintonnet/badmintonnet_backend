@@ -56,6 +56,11 @@ public class TournamentService {
             throw new InvalidDataException("Cần chọn cơ sở hoặc nhập địa điểm tùy chỉnh");
         }
 
+        TournamentParticipationTypeEnum participationType =
+                request.getParticipationType() != null
+                        ? request.getParticipationType()
+                        : TournamentParticipationTypeEnum.INDIVIDUAL;
+
         Tournament tournament = Tournament.builder()
                 .name(request.getName())
                 .description(request.getDescription())
@@ -63,36 +68,45 @@ public class TournamentService {
                 .logoUrl(request.getLogoUrl())
                 .location(request.getLocation())
                 .facility(facility)
+                .fee(request.getFee())
                 .registrationEndDate(request.getRegistrationEndDate())
                 .registrationStartDate(request.getRegistrationStartDate())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .status(TournamentStatus.UPCOMING)
                 .rules(request.getRules())
+                .participationType(participationType)
+                .teamMatchFormat(request.getTeamMatchFormat())
+                .clubRegistrationFee(request.getClubRegistrationFee())
+                .minClubRosterSize(request.getMinClubRosterSize())
+                .maxClubRosterSize(request.getMaxClubRosterSize())
+                .maxClubs(request.getMaxClubs())
                 .build();
         tournament = tournamentRepository.save(tournament);
 
         List<TournamentCategory> tournamentCategories = new ArrayList<>();
 
-        for (TournamentCategoryRequest c : request.getCategories()) {
-            TournamentCategory category = TournamentCategory.builder()
-                    .category(c.getCategoryType())
-                    .tournament(tournament)
-                    .minLevel(c.getMinLevel())
-                    .maxLevel(c.getMaxLevel())
-                    .maxParticipants(c.getMaxParticipants())
-                    .registrationFee(c.getRegistrationFee())
-                    .description(c.getDescription())
-                    .rules(c.getRules())
-                    .firstPrize(c.getFirstPrize())
-                    .secondPrize(c.getSecondPrize())
-                    .thirdPrize(c.getThirdPrize())
-                    .build();
+        if (request.getCategories() != null) {
+            for (TournamentCategoryRequest c : request.getCategories()) {
+                TournamentCategory category = TournamentCategory.builder()
+                        .category(c.getCategoryType())
+                        .tournament(tournament)
+                        .minLevel(c.getMinLevel())
+                        .maxLevel(c.getMaxLevel())
+                        .maxParticipants(c.getMaxParticipants())
+                        .registrationFee(c.getRegistrationFee())
+                        .description(c.getDescription())
+                        .rules(c.getRules())
+                        .firstPrize(c.getFirstPrize())
+                        .secondPrize(c.getSecondPrize())
+                        .thirdPrize(c.getThirdPrize())
+                        .build();
 
-            tournamentCategories.add(category);
+                tournamentCategories.add(category);
+            }
+            tournamentCategoryRepository.saveAll(tournamentCategories);
         }
 
-        tournamentCategoryRepository.saveAll(tournamentCategories);
         tournament.setCategories(tournamentCategories);
         return toTournamentResponse(tournament);
     }
@@ -157,7 +171,8 @@ public class TournamentService {
     }
 
     public TournamentResponse toTournamentResponse(Tournament tournament) {
-        List<TournamentCategory> tournamentCategories = tournament.getCategories();
+        List<TournamentCategory> tournamentCategories =
+                tournament.getCategories() != null ? tournament.getCategories() : new ArrayList<>();
         List<TournamentCategoryResponse> tournamentCategoryResponses = new ArrayList<>();
         for (TournamentCategory tournamentCategory : tournamentCategories) {
             TournamentCategoryResponse tournamentCategoryResponse = TournamentCategoryResponse.builder()
@@ -194,7 +209,8 @@ public class TournamentService {
     }
 
     public TournamentDetailResponse tournamentDetailResponse(Tournament tournament, Account account){
-        List<TournamentCategory> tournamentCategories = tournament.getCategories();
+        List<TournamentCategory> tournamentCategories =
+                tournament.getCategories() != null ? tournament.getCategories() : new ArrayList<>();
         List<TournamentCategoryDetailResponse> tournamentCategoryResponses = new ArrayList<>();
         List<TournamentPlayerResponse> tournamentPlayerResponses = new ArrayList<>();
         for (TournamentCategory tournamentCategory : tournamentCategories) {
@@ -315,7 +331,7 @@ public class TournamentService {
             tournamentRepository.save(tournament);
         }
     }
-//    @Scheduled(cron = "0 * * * * *")
+    //    @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void autoUpdateTournamentStatus() {
         System.out.println("Chạy hàm giải đấu");
