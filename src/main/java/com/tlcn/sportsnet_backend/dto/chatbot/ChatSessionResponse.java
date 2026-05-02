@@ -12,6 +12,7 @@ import java.time.Instant;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ChatSessionResponse {
     String sessionId;
+    String title;
     Instant lastMessageTime;
     String lastMessage;
     String lastRole;

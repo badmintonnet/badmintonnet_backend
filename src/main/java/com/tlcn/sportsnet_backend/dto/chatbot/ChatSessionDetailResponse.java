@@ -12,6 +12,7 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ChatSessionDetailResponse {
     String sessionId;
+    String title;
     List<ChatMessageResponse> messages;
     int page;
     int size;

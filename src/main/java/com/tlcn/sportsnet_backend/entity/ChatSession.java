@@ -25,6 +25,9 @@ public class ChatSession {
     @Column(name = "session_id", nullable = false, unique = true)
     String sessionId;
 
+    @Column(name = "title", nullable = false, length = 255)
+    String title;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     Instant createdAt;
 

@@ -72,6 +72,7 @@ app:
 
 chatbot:
   url: ${CHATBOT_URL:http://127.0.0.1:9000/chat}
+  set-name: ${CHATBOT_SET_NAME:http://127.0.0.1:9000/conversation-title}
 
 address:
   api:
