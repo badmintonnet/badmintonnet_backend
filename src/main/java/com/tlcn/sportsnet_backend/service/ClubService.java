@@ -248,8 +248,7 @@ public class ClubService {
 
     public ClubResponse getClubInformation(String slug) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        Account account = accountRepository.findByEmail(authentication.getName())
-                .orElseThrow(() -> new InvalidDataException("Account not found"));
+        Account account = accountRepository.findByEmail(authentication.getName()).orElse(null);
         Club club = clubRepository.findBySlug(slug).orElseThrow(() -> new InvalidDataException("Club not found"));
         return toClubResponse(club, account, false);
     }

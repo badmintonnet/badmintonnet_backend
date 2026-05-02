@@ -49,6 +49,8 @@ import java.util.stream.Collectors;
 public class ChatbotController {
 
     private static final String DEFAULT_TITLE = "Cuoc tro chuyen moi";
+    private static final String DEFAULT_CHATBOT_URL = "http://127.0.0.1:9000/chat";
+    private static final String DEFAULT_CHATBOT_TITLE_URL = "http://127.0.0.1:9000/conversation-title";
     private static final int MAX_TITLE_LENGTH = 120;
 
     private final ChatMessageRepository chatMessageRepository;
@@ -57,10 +59,10 @@ public class ChatbotController {
     private final RestTemplate restTemplate = new RestTemplate();
 
     @Value("${chatbot.url:http://127.0.0.1:9000/chat}")
-    private String chatbotUrl;
+    private String configuredChatbotUrl;
 
     @Value("${chatbot.set-name:http://127.0.0.1:9000/conversation-title}")
-    private String chatSetNameUrl;
+    private String configuredChatSetNameUrl;
 
     @PostMapping("/ask")
     public ResponseEntity<?> askChatbot(
@@ -73,7 +75,7 @@ public class ChatbotController {
         Account account = accountRepository.findByEmail(currentEmail)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
 
-        String sessionId = StringUtils.hasText(request.getSessionId())
+        String sessionId = StringUtils.hasText(request.getSessionId()) 
                 ? request.getSessionId()
                 : UUID.randomUUID().toString();
         request.setSessionId(sessionId);
@@ -101,7 +103,7 @@ public class ChatbotController {
         HttpHeaders headers = buildHeadersWithAuthorization(httpRequest.getHeader("Authorization"));
         HttpEntity<ChatbotRequest> entity = new HttpEntity<>(request, headers);
         ResponseEntity<?> response = restTemplate.exchange(
-                chatbotUrl,
+                chatbotUrl(),
                 HttpMethod.POST,
                 entity,
                 Object.class
@@ -143,12 +145,14 @@ public class ChatbotController {
 
     private String resolveConversationTitle(ChatbotRequest request, HttpServletRequest httpRequest) {
         try {
+            System.out.println("Title request "+ request.getQuestion());
+            System.out.println("Resolve conversation title URL: " + chatSetNameUrl());
             Map<String, String> body = new HashMap<>();
             body.put("message", request.getQuestion());
 
             HttpEntity<Map<String, String>> entity = new HttpEntity<>(body);
             ResponseEntity<?> response = restTemplate.exchange(
-                    chatSetNameUrl,
+                    chatSetNameUrl(),
                     HttpMethod.POST,
                     entity,
                     Object.class
@@ -158,10 +162,20 @@ public class ChatbotController {
             if (StringUtils.hasText(title)) {
                 return trimTitle(title);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            System.out.println("Failed to resolve conversation title from " + chatSetNameUrl() + ": " + e.getMessage());
+            e.printStackTrace();
         }
 
         return fallbackConversationTitle(request.getQuestion());
+    }
+
+    private String chatbotUrl() {
+        return StringUtils.hasText(configuredChatbotUrl) ? configuredChatbotUrl : DEFAULT_CHATBOT_URL;
+    }
+
+    private String chatSetNameUrl() {
+        return StringUtils.hasText(configuredChatSetNameUrl) ? configuredChatSetNameUrl : DEFAULT_CHATBOT_TITLE_URL;
     }
 
     private String extractAssistantContent(Object responseBody) {
