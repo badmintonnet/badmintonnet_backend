@@ -55,8 +55,6 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             cd /var/www/sportsnet_backend
-            # 1. Pull the updated docker-compose.yml file from GitHub
-            git pull origin main
             # 2. Pull the newly built image from Docker Hub
             docker compose pull sportsnet-app
             # 3. Restart the container with the new image (won't touch the database)
