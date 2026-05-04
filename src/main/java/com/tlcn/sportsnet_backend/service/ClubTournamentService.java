@@ -726,7 +726,20 @@ public class ClubTournamentService {
                     return tournamentCategoryRepository.save(newCat);
                 });
 
-        // 7. Tạo TournamentMatch entries (bracket logic)
+        // 7a. Xóa match cũ nếu có (prevent duplicate khi gọi lại)
+        //     Không cho phép tái tạo nếu bất kỳ match nào đã IN_PROGRESS / FINISHED
+        List<TournamentMatch> existingMatches = tournamentMatchRepository.findByCategory(category);
+        if (!existingMatches.isEmpty()) {
+            boolean anyStarted = existingMatches.stream()
+                    .anyMatch(m -> m.getStatus() == MatchStatus.IN_PROGRESS
+                            || m.getStatus() == MatchStatus.FINISHED);
+            if (anyStarted) {
+                throw new InvalidDataException("Không thể tạo lại bảng đấu khi đã có trận đang diễn ra hoặc kết thúc");
+            }
+            tournamentMatchRepository.deleteByCategory(category);
+        }
+
+        // 7b. Tạo TournamentMatch entries (bracket logic)
         List<RepresentativeInfo> reps = new ArrayList<>(repMap.values());
         int n = reps.size();
         int bracketSize = nextPowerOfTwo(n);

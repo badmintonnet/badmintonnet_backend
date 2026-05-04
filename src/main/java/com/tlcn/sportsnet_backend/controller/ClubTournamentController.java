@@ -4,6 +4,7 @@ import com.tlcn.sportsnet_backend.dto.club_tournament.ClubRepresentativeRequest;
 import com.tlcn.sportsnet_backend.dto.club_tournament.ClubTournamentRegistrationRequest;
 import com.tlcn.sportsnet_backend.dto.club_tournament.UpdateRosterRequest;
 import com.tlcn.sportsnet_backend.enums.ClubTournamentParticipantStatusEnum;
+import com.tlcn.sportsnet_backend.service.ClubTournamentResultService;
 import com.tlcn.sportsnet_backend.service.ClubTournamentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import java.util.List;
 public class ClubTournamentController {
 
     private final ClubTournamentService clubTournamentService;
+    private final ClubTournamentResultService clubTournamentResultService;
 
     /**
      * CLB chủ đăng ký tham gia tournament
@@ -146,5 +148,14 @@ public class ClubTournamentController {
     @GetMapping("/tournament/{tournamentId}/bracket")
     public ResponseEntity<?> getClubBracket(@PathVariable String tournamentId) {
         return ResponseEntity.ok(clubTournamentService.getClubBracketByTournament(tournamentId));
+    }
+
+    /**
+     * Lấy kết quả CLUB tournament (podium, ranking, stats, key matches)
+     * GET /api/club-tournament/tournament/{tournamentId}/results
+     */
+    @GetMapping("/tournament/{tournamentId}/results")
+    public ResponseEntity<?> getClubTournamentResults(@PathVariable String tournamentId) {
+        return ResponseEntity.ok(clubTournamentResultService.getResults(tournamentId));
     }
 }

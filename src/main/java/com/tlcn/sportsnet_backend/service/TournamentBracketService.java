@@ -4,8 +4,10 @@ package com.tlcn.sportsnet_backend.service;
 import ch.qos.logback.classic.Logger;
 import com.tlcn.sportsnet_backend.dto.bracket.*;
 import com.tlcn.sportsnet_backend.entity.*;
+import com.tlcn.sportsnet_backend.enums.ClubTournamentParticipantStatusEnum;
 import com.tlcn.sportsnet_backend.enums.MatchStatus;
 import com.tlcn.sportsnet_backend.enums.PaymentStatusEnum;
+import com.tlcn.sportsnet_backend.enums.TournamentParticipationTypeEnum;
 import com.tlcn.sportsnet_backend.error.InvalidDataException;
 import com.tlcn.sportsnet_backend.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,7 @@ public class TournamentBracketService {
     private final PlayerTournamentHistoryService historyService;
     private final TournamentResultService resultService;
     private final TournamentPaymentRepository paymentRepo;
+    private final ClubTournamentParticipantRepository clubParticipantRepo;
 
     private static final Logger log =
             (Logger) LoggerFactory.getLogger(TournamentBracketService.class);
@@ -204,6 +207,20 @@ public class TournamentBracketService {
 
             matchRepo.save(match);
 
+            // Nếu là CLUB tournament → set loser status = ELIMINATED
+            if (match.getCategory().getTournament().getParticipationType()
+                    == TournamentParticipationTypeEnum.CLUB) {
+                String loserId = p1Winner
+                        ? match.getParticipant2Id()
+                        : match.getParticipant1Id();
+                if (loserId != null) {
+                    clubParticipantRepo.findById(loserId).ifPresent(loser -> {
+                        loser.setStatus(ClubTournamentParticipantStatusEnum.ELIMINATED);
+                        clubParticipantRepo.save(loser);
+                    });
+                }
+            }
+
             advanceWinner(match);
 
             try {
@@ -215,11 +232,18 @@ public class TournamentBracketService {
             // TỰ ĐỘNG GENERATE KẾT QUẢ NẾU LÀ FINAL
             Integer maxRound = matchRepo.findMaxRoundByCategory(match.getCategory());
             if (match.getRound().equals(maxRound)) {
-                resultService.generateResultForCategory(match.getCategory());
+                // CLUB tournament dùng TournamentMatch với participantId = ClubTournamentParticipant.id,
+                // không tương thích với TournamentResultService (query TournamentParticipant).
+                // CLUB results được derive on-the-fly bởi ClubTournamentResultService.
+                TournamentParticipationTypeEnum type =
+                        match.getCategory().getTournament().getParticipationType();
+                if (type != TournamentParticipationTypeEnum.CLUB) {
+                    resultService.generateResultForCategory(match.getCategory());
 
-                historyService.updateHistoryFromCategoryResult(
-                        match.getCategory()
-                );
+                    historyService.updateHistoryFromCategoryResult(
+                            match.getCategory()
+                    );
+                }
             }
 
         } else {
