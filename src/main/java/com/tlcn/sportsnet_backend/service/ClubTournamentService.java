@@ -495,7 +495,9 @@ public class ClubTournamentService {
     private ClubTournamentParticipantResponse buildBasicResponse(ClubTournamentParticipant participant) {
         Club club = participant.getClub();
         Tournament tournament = participant.getTournament();
-        int rosterSize = participant.getRoster() != null ? participant.getRoster().size() : 0;
+        List<ClubTournamentRoster> rosterList = participant.getRoster();
+        int rosterSize = rosterList != null ? rosterList.size() : 0;
+        List<ClubRosterMemberResponse> rosterResponses = buildRosterResponses(rosterList);
         return ClubTournamentParticipantResponse.builder()
                 .id(participant.getId())
                 .clubId(club.getId())
@@ -508,9 +510,11 @@ public class ClubTournamentService {
                 .tournamentId(tournament.getId())
                 .tournamentName(tournament.getName())
                 .tournamentSlug(tournament.getSlug())
+                .tournamentStatus(tournament.getStatus())
                 .status(participant.getStatus())
                 .registeredAt(participant.getRegisteredAt())
                 .paid(isPaid(participant.getStatus()))
+                .roster(rosterResponses)
                 .rosterSize(rosterSize)
                 .build();
     }
@@ -532,6 +536,7 @@ public class ClubTournamentService {
                 .tournamentId(tournament.getId())
                 .tournamentName(tournament.getName())
                 .tournamentSlug(tournament.getSlug())
+                .tournamentStatus(tournament.getStatus())
                 .status(participant.getStatus())
                 .registeredAt(participant.getRegisteredAt())
                 .paid(isPaid(participant.getStatus()))
