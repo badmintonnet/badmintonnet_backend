@@ -37,7 +37,16 @@ public class ClubTournamentResultService {
         List<ClubTournamentParticipant> approved = clubTournamentParticipantRepository
                 .findByTournamentIdAndStatus(tournamentId, ClubTournamentParticipantStatusEnum.APPROVED);
 
-        Map<String, RepInfo> repMap = buildRepMap(approved);
+        // Hiển thị tên CLB / logo cho key match & ranking: gồm cả ELIMINATED (chỉ APPROVED
+        // thì CLB thua không còn trong map → thấy 1 bên hoặc "Không xác định").
+        List<ClubTournamentParticipant> forDisplayLabels = clubTournamentParticipantRepository
+                .findByTournamentId(tournamentId)
+                .stream()
+                .filter(p -> p.getStatus() != ClubTournamentParticipantStatusEnum.CANCELLED
+                        && p.getStatus() != ClubTournamentParticipantStatusEnum.REJECTED)
+                .collect(Collectors.toList());
+
+        Map<String, RepInfo> repMap = buildRepMap(forDisplayLabels);
 
         TournamentCategory category = tournamentCategoryRepository
                 .findByTournamentIdAndCategory(tournamentId, BadmintonCategoryEnum.MEN_SINGLE)
@@ -63,17 +72,14 @@ public class ClubTournamentResultService {
                 .max(Integer::compareTo)
                 .orElse(0);
 
-        TournamentMatch finalMatch = matches.stream()
-                .filter(m -> Objects.equals(m.getRound(), maxRound))
-                .findFirst()
-                .orElse(null);
+        DuelSummary finalDuel = soleDuelAtRound(matches, maxRound).orElse(null);
+        boolean finished =
+                finalDuel != null && duelHasWinner(finalDuel.rubbers());
 
-        boolean finished = finalMatch != null
-                && finalMatch.getStatus() == MatchStatus.FINISHED
-                && finalMatch.getWinnerId() != null;
-
-        List<ClubResultPodiumItem> podium = buildPodium(category, matches, finalMatch, maxRound, repMap, finished);
-        List<ClubResultPodiumItem> ranking = buildRanking(matches, maxRound, repMap, podium);
+        List<ClubResultPodiumItem> podium =
+                buildPodium(category, matches, maxRound, repMap, finished, finalDuel);
+        List<ClubResultPodiumItem> ranking =
+                buildRanking(matches, maxRound, repMap, podium);
         List<ClubResultMatchSummary> keyMatches = buildKeyMatches(matches, maxRound, repMap);
         List<ClubResultClubStat> clubStats = buildClubStats(matches, repMap);
 
@@ -97,36 +103,39 @@ public class ClubTournamentResultService {
     private List<ClubResultPodiumItem> buildPodium(
             TournamentCategory category,
             List<TournamentMatch> matches,
-            TournamentMatch finalMatch,
             Integer maxRound,
             Map<String, RepInfo> repMap,
-            boolean finished
+            boolean finished,
+            DuelSummary finalDuel
     ) {
-        if (!finished || finalMatch == null) {
+        if (!finished || finalDuel == null || finalDuel.rubbers().isEmpty()) {
             return List.of();
         }
 
+        String championId = computeClubTieWinner(finalDuel.rubbers());
+        if (championId == null) {
+            return List.of();
+        }
+
+        TournamentMatch finalRef = finalDuel.rubbers().get(0);
+        String runnerUpId = otherParticipantId(finalRef, championId);
+
         List<ClubResultPodiumItem> podium = new ArrayList<>();
 
-        // 1st
-        podium.add(toPodiumItem(finalMatch.getWinnerId(), 1, category.getFirstPrize(), repMap));
+        podium.add(toPodiumItem(championId, 1, category.getFirstPrize(), repMap));
 
-        // 2nd
-        String runnerUpId = otherParticipantId(finalMatch, finalMatch.getWinnerId());
         if (runnerUpId != null) {
             podium.add(toPodiumItem(runnerUpId, 2, category.getSecondPrize(), repMap));
         }
 
-        // 3rd: losers of semi-finals
         if (maxRound != null && maxRound > 1) {
             int semiRound = maxRound - 1;
-            List<TournamentMatch> semis = matches.stream()
-                    .filter(m -> Objects.equals(m.getRound(), semiRound))
-                    .toList();
-
-            for (TournamentMatch semi : semis) {
-                if (semi.getStatus() != MatchStatus.FINISHED || semi.getWinnerId() == null) continue;
-                String loserId = otherParticipantId(semi, semi.getWinnerId());
+            for (DuelSummary semi : duelsAtRound(matches, semiRound)) {
+                if (!duelHasWinner(semi.rubbers())) continue;
+                String duelWinner = computeClubTieWinner(semi.rubbers());
+                if (duelWinner == null) continue;
+                TournamentMatch ref = semi.rubbers().get(0);
+                String loserId = otherParticipantId(ref, duelWinner);
                 if (loserId != null) {
                     podium.add(toPodiumItem(loserId, 3, category.getThirdPrize(), repMap));
                 }
@@ -186,11 +195,16 @@ public class ClubTournamentResultService {
         // Các CLB còn lại: sắp xếp theo round bị loại (round cao hơn = hạng cao hơn)
         // Round bị loại = round cuối mà CLB tham gia thua (hoặc có mặt nhưng không advance).
         Map<String, Integer> eliminationRound = new HashMap<>();
-        for (TournamentMatch m : matches) {
-            if (m.getStatus() != MatchStatus.FINISHED || m.getWinnerId() == null) continue;
-            String loserId = otherParticipantId(m, m.getWinnerId());
+        Map<String, List<TournamentMatch>> duelsFlat = groupedClubDuels(matches);
+        for (List<TournamentMatch> duelRubbers : duelsFlat.values()) {
+            int round = duelRubbers.get(0).getRound();
+            if (!duelHasWinner(duelRubbers)) continue;
+            String winnerId = computeClubTieWinner(duelRubbers);
+            if (winnerId == null) continue;
+            TournamentMatch ref = duelRubbers.get(0);
+            String loserId = otherParticipantId(ref, winnerId);
             if (loserId == null) continue;
-            eliminationRound.merge(loserId, m.getRound(), Math::max);
+            eliminationRound.merge(loserId, round, Math::max);
         }
 
         // Bắt đầu từ hạng 4 trở đi (đã có top 3)
@@ -236,21 +250,32 @@ public class ClubTournamentResultService {
 
         List<ClubResultMatchSummary> keyMatches = new ArrayList<>();
 
-        // Final
-        matches.stream()
-                .filter(m -> Objects.equals(m.getRound(), maxRound))
-                .filter(m -> m.getStatus() == MatchStatus.FINISHED)
-                .findFirst()
-                .ifPresent(m -> keyMatches.add(toMatchSummary(m, "Chung kết", maxRound, repMap)));
+        soleDuelAtRound(matches, maxRound)
+                .filter(d -> duelHasWinner(d.rubbers()))
+                .ifPresent(
+                        d ->
+                                keyMatches.add(
+                                        toMatchSummary(
+                                                representativeRubber(d.rubbers()),
+                                                "Chung kết",
+                                                maxRound,
+                                                repMap)));
 
-        // Semi-finals
         if (maxRound > 1) {
             int semiRound = maxRound - 1;
-            matches.stream()
-                    .filter(m -> Objects.equals(m.getRound(), semiRound))
-                    .filter(m -> m.getStatus() == MatchStatus.FINISHED)
-                    .sorted(Comparator.comparingInt(TournamentMatch::getMatchIndex))
-                    .forEach(m -> keyMatches.add(toMatchSummary(m, "Bán kết", maxRound, repMap)));
+            duelsAtRound(matches, semiRound).stream()
+                    .filter(d -> duelHasWinner(d.rubbers()))
+                    .sorted(
+                            Comparator.comparingInt(
+                                    d -> d.rubbers().get(0).getMatchIndex()))
+                    .forEach(
+                            d ->
+                                    keyMatches.add(
+                                            toMatchSummary(
+                                                    representativeRubber(d.rubbers()),
+                                                    "Bán kết",
+                                                    maxRound,
+                                                    repMap)));
         }
 
         return keyMatches;
@@ -317,28 +342,36 @@ public class ClubTournamentResultService {
                     .build());
         }
 
-        for (TournamentMatch m : matches) {
-            if (m.getStatus() != MatchStatus.FINISHED || m.getWinnerId() == null) continue;
-
-            String p1 = m.getParticipant1Id();
-            String p2 = m.getParticipant2Id();
+        Map<String, List<TournamentMatch>> duelsFlat = groupedClubDuels(matches);
+        for (List<TournamentMatch> duelRubbers : duelsFlat.values()) {
+            if (!duelHasWinner(duelRubbers)) continue;
+            TournamentMatch ref = duelRubbers.get(0);
+            String p1 = ref.getParticipant1Id();
+            String p2 = ref.getParticipant2Id();
             if (p1 == null || p2 == null) continue;
 
-            int setsP1 = m.getSetScoreP1() != null ? m.getSetScoreP1().size() : 0;
-            int setsP2 = m.getSetScoreP2() != null ? m.getSetScoreP2().size() : 0;
+            String duelWinner = computeClubTieWinner(duelRubbers);
+            if (duelWinner == null) continue;
 
-            int p1SetWins = 0;
-            int p2SetWins = 0;
-            for (int i = 0; i < Math.max(setsP1, setsP2); i++) {
-                Integer s1 = i < setsP1 ? m.getSetScoreP1().get(i) : null;
-                Integer s2 = i < setsP2 ? m.getSetScoreP2().get(i) : null;
-                if (s1 == null || s2 == null) continue;
-                if (s1 > s2) p1SetWins++;
-                else if (s2 > s1) p2SetWins++;
+            int p1SetWins = 0, p2SetWins = 0;
+            for (TournamentMatch m : duelRubbers) {
+                if (m.getStatus() != MatchStatus.FINISHED || m.getWinnerId() == null)
+                    continue;
+
+                int setsP1 = m.getSetScoreP1() != null ? m.getSetScoreP1().size() : 0;
+                int setsP2 = m.getSetScoreP2() != null ? m.getSetScoreP2().size() : 0;
+                for (int i = 0; i < Math.max(setsP1, setsP2); i++) {
+                    Integer s1 = i < setsP1 ? m.getSetScoreP1().get(i) : null;
+                    Integer s2 = i < setsP2 ? m.getSetScoreP2().get(i) : null;
+                    if (s1 == null || s2 == null) continue;
+                    if (s1 > s2) p1SetWins++;
+                    else if (s2 > s1) p2SetWins++;
+                }
             }
 
-            updateStat(statsMap, p1, p1.equals(m.getWinnerId()), p1SetWins, p2SetWins);
-            updateStat(statsMap, p2, p2.equals(m.getWinnerId()), p2SetWins, p1SetWins);
+            boolean p1WonTie = p1.equals(duelWinner);
+            updateStat(statsMap, p1, p1WonTie, p1SetWins, p2SetWins);
+            updateStat(statsMap, p2, !p1WonTie, p2SetWins, p1SetWins);
         }
 
         return new ArrayList<>(statsMap.values());
@@ -383,14 +416,136 @@ public class ClubTournamentResultService {
     // HELPERS
     // =========================================================
 
+    /** Một duel CLB-vs-CLB = nhiều rubber (tieId giống nhau) hoặc một match legacy. */
+    private record DuelSummary(String key, List<TournamentMatch> rubbers) {}
+
+    private static final Comparator<TournamentMatch> RUBBER_ORDER =
+            Comparator.comparing((TournamentMatch m) ->
+                            m.getMatchIndex() == null ? 0 : m.getMatchIndex())
+                    .thenComparing(m -> m.getLineType() == null ? "" : m.getLineType().name())
+                    .thenComparingInt(m -> m.getLineIndex() == null ? 0 : m.getLineIndex());
+
+    private Map<String, List<TournamentMatch>> groupedClubDuels(List<TournamentMatch> matches) {
+        Map<String, List<TournamentMatch>> map = new LinkedHashMap<>();
+        for (TournamentMatch m : matches) {
+            String key =
+                    m.getTieId() != null ? "T:" + m.getTieId() : "M:" + m.getId();
+            map.computeIfAbsent(key, k -> new ArrayList<>()).add(m);
+        }
+        for (List<TournamentMatch> list : map.values()) {
+            list.sort(RUBBER_ORDER);
+        }
+        return map;
+    }
+
+    private List<DuelSummary> duelsAtRound(List<TournamentMatch> matches, int roundNum) {
+        Map<String, List<TournamentMatch>> acc = new LinkedHashMap<>();
+        for (TournamentMatch m : matches) {
+            if (!Objects.equals(m.getRound(), roundNum)) continue;
+            String key =
+                    m.getTieId() != null ? "T:" + m.getTieId() : "M:" + m.getId();
+            acc.computeIfAbsent(key, k -> new ArrayList<>()).add(m);
+        }
+        List<DuelSummary> out = new ArrayList<>();
+        for (Map.Entry<String, List<TournamentMatch>> e : acc.entrySet()) {
+            List<TournamentMatch> sorted = new ArrayList<>(e.getValue());
+            sorted.sort(RUBBER_ORDER);
+            out.add(new DuelSummary(e.getKey(), sorted));
+        }
+        out.sort(
+                Comparator.comparingInt(
+                        d -> d.rubbers().getFirst().getMatchIndex() == null
+                                ? 0
+                                : d.rubbers().getFirst().getMatchIndex()));
+        return out;
+    }
+
+    private Optional<DuelSummary> soleDuelAtRound(List<TournamentMatch> matches, Integer roundNum) {
+        if (roundNum == null || roundNum <= 0) return Optional.empty();
+        List<DuelSummary> ds = duelsAtRound(matches, roundNum);
+        if (ds.size() != 1) return Optional.empty();
+        return Optional.of(ds.get(0));
+    }
+
+    private TournamentMatch representativeRubber(List<TournamentMatch> rubbers) {
+        return rubbers.stream()
+                .filter(
+                        m ->
+                                m.getStatus() == MatchStatus.FINISHED
+                                        && m.getWinnerId() != null)
+                .max(RUBBER_ORDER)
+                .orElse(rubbers.getFirst());
+    }
+
+    private boolean duelHasWinner(List<TournamentMatch> rubbers) {
+        return computeClubTieWinner(rubbers) != null;
+    }
+
+    /**
+     * Logic trùng với {@link com.tlcn.sportsnet_backend.service.TournamentBracketService} khi đóng
+     * một tie CLB.
+     */
+    private static String computeClubTieWinner(List<TournamentMatch> rubbers) {
+        if (rubbers == null || rubbers.isEmpty()) return null;
+        TournamentMatch first = rubbers.getFirst();
+
+        // Legacy CLUB (không có tieId): một hàng là cả trận
+        if (first.getTieId() == null) {
+            TournamentMatch m = rubbers.getFirst();
+            if (m.getStatus() != MatchStatus.FINISHED || m.getWinnerId() == null) return null;
+            return m.getWinnerId();
+        }
+
+        String club1Id = first.getParticipant1Id();
+        String club2Id = first.getParticipant2Id();
+        if (club1Id == null || club2Id == null) return null;
+
+        int totalRubbers = rubbers.size();
+        int majorityThreshold = (totalRubbers / 2) + 1;
+
+        int club1Wins = 0, club2Wins = 0;
+        int club1Sets = 0, club2Sets = 0;
+        int finishedCount = 0;
+        for (TournamentMatch m : rubbers) {
+            if (m.getStatus() == MatchStatus.FINISHED) {
+                finishedCount++;
+                if (club1Id.equals(m.getWinnerId())) club1Wins++;
+                else if (club2Id.equals(m.getWinnerId())) club2Wins++;
+                List<Integer> s1 = m.getSetScoreP1();
+                List<Integer> s2 = m.getSetScoreP2();
+                int len = Math.min(s1 == null ? 0 : s1.size(), s2 == null ? 0 : s2.size());
+                for (int i = 0; i < len; i++) {
+                    if (s1.get(i) > s2.get(i)) club1Sets++;
+                    else if (s2.get(i) > s1.get(i)) club2Sets++;
+                }
+            }
+        }
+
+        if (club1Wins >= majorityThreshold) return club1Id;
+        if (club2Wins >= majorityThreshold) return club2Id;
+        if (finishedCount == totalRubbers) {
+            if (club1Sets > club2Sets) return club1Id;
+            if (club2Sets > club1Sets) return club2Id;
+        }
+        return null;
+    }
+
     private Map<String, RepInfo> buildRepMap(List<ClubTournamentParticipant> approved) {
         Map<String, RepInfo> repMap = new LinkedHashMap<>();
         for (ClubTournamentParticipant p : approved) {
             Club club = p.getClub();
             String pid = p.getId();
 
-            Optional<ClubTournamentRoster> repOpt = clubTournamentRosterRepository
-                    .findByClubTournamentParticipant_IdAndPositionWithDetails(pid, "SINGLES");
+            Optional<ClubTournamentRoster> repOpt =
+                    clubTournamentRosterRepository
+                            .findByClubTournamentParticipant_IdAndPositionWithDetails(
+                                    pid, "SINGLES_1");
+            if (repOpt.isEmpty()) {
+                repOpt =
+                        clubTournamentRosterRepository
+                                .findByClubTournamentParticipant_IdAndPositionWithDetails(
+                                        pid, "SINGLES");
+            }
 
             String accountId = null;
             String memberName = null;

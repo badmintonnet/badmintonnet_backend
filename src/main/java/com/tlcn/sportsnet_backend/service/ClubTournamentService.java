@@ -1,11 +1,13 @@
 package com.tlcn.sportsnet_backend.service;
 
 import com.tlcn.sportsnet_backend.dto.club_tournament.*;
+import com.tlcn.sportsnet_backend.dto.tournament.TeamMatchFormatDTO;
 import com.tlcn.sportsnet_backend.entity.*;
 import com.tlcn.sportsnet_backend.enums.*;
 import com.tlcn.sportsnet_backend.error.InvalidDataException;
 import com.tlcn.sportsnet_backend.payload.response.PagedResponse;
 import com.tlcn.sportsnet_backend.repository.*;
+import com.tlcn.sportsnet_backend.service.helper.ClubLineupHelper;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -508,6 +511,7 @@ public class ClubTournamentService {
                 .tournamentId(tournament.getId())
                 .tournamentName(tournament.getName())
                 .tournamentSlug(tournament.getSlug())
+                .tournamentStatus(tournament.getStatus())
                 .status(participant.getStatus())
                 .registeredAt(participant.getRegisteredAt())
                 .paid(isPaid(participant.getStatus()))
@@ -532,6 +536,7 @@ public class ClubTournamentService {
                 .tournamentId(tournament.getId())
                 .tournamentName(tournament.getName())
                 .tournamentSlug(tournament.getSlug())
+                .tournamentStatus(tournament.getStatus())
                 .status(participant.getStatus())
                 .registeredAt(participant.getRegisteredAt())
                 .paid(isPaid(participant.getStatus()))
@@ -588,8 +593,30 @@ public class ClubTournamentService {
     // 7. CHỌN ĐẠI DIỆN ĐƠN NAM
     // =========================================================
 
+    /**
+     * Backward-compat: chọn đại diện đơn (1 SINGLES). Tương đương setLineup với
+     * lineup chỉ có 1 entry "SINGLES_1".
+     */
     @Transactional
     public void setRepresentative(String participantId, String rosterEntryId) {
+        ClubLineupRequest req = ClubLineupRequest.builder()
+                .lineup(Map.of("SINGLES_1", rosterEntryId))
+                .build();
+        setLineup(participantId, req);
+    }
+
+    /**
+     * Set / update lineup cho participant. Cho phép submit partial.
+     * - Validate roster entries thuộc về participant
+     * - Validate constraint: 1 người tối đa 2 rubber/tie
+     * - Validate position hợp lệ với teamMatchFormat
+     * - Bị khoá nếu bracket đã được generate (tournament IN_PROGRESS hoặc COMPLETED)
+     */
+    @Transactional
+    public ClubLineupResponse setLineup(String participantId, ClubLineupRequest request) {
+        if (request == null || request.getLineup() == null) {
+            throw new InvalidDataException("Lineup không được để trống");
+        }
         Account owner = getCurrentAccount();
 
         ClubTournamentParticipant participant = clubTournamentParticipantRepository.findByIdWithDetails(participantId)
@@ -597,39 +624,154 @@ public class ClubTournamentService {
 
         Club club = participant.getClub();
 
-        // Verify owner permission
         ClubMember ownerMember = clubMemberRepository.findByClubAndAccountWithAccount(club, owner);
         if (ownerMember == null || ownerMember.getRole() != ClubMemberRoleEnum.OWNER) {
-            throw new InvalidDataException("Chỉ chủ CLB mới có thể chọn đại diện");
+            throw new InvalidDataException("Chỉ chủ CLB mới có thể chọn lineup");
         }
 
-        // Chỉ cho phép chọn đại diện khi CLB đã thanh toán (PAID) hoặc đã được duyệt (APPROVED)
         ClubTournamentParticipantStatusEnum status = participant.getStatus();
         if (status != ClubTournamentParticipantStatusEnum.PAID
                 && status != ClubTournamentParticipantStatusEnum.APPROVED) {
-            throw new InvalidDataException("Chỉ có thể chọn đại diện khi CLB đã thanh toán hoặc đã được duyệt");
+            throw new InvalidDataException("Chỉ có thể chọn lineup khi CLB đã thanh toán hoặc đã được duyệt");
         }
 
-        // Validate roster entry exists in this participant
+        Tournament tournament = participant.getTournament();
+        if (tournament.getStatus() != null
+                && tournament.getStatus() != TournamentStatus.UPCOMING
+                && tournament.getStatus() != TournamentStatus.REGISTRATION_OPEN
+                && tournament.getStatus() != TournamentStatus.REGISTRATION_CLOSED) {
+            throw new InvalidDataException("Lineup đã bị khoá khi giải đấu đã bắt đầu");
+        }
+
+        TeamMatchFormatDTO format = ClubLineupHelper.parseFormat(tournament.getTeamMatchFormat());
+        List<ClubLineupHelper.PositionSpec> validPositions = ClubLineupHelper.buildPositions(format);
+        Map<String, ClubLineupHelper.PositionSpec> validPosMap = new HashMap<>();
+        for (ClubLineupHelper.PositionSpec p : validPositions) validPosMap.put(p.position(), p);
+
         List<ClubTournamentRoster> allRoster = clubTournamentRosterRepository
                 .findByClubTournamentParticipant(participant);
-        ClubTournamentRoster targetEntry = allRoster.stream()
-                .filter(r -> r.getId().equals(rosterEntryId))
-                .findFirst()
-                .orElseThrow(() -> new InvalidDataException("Không tìm thấy thành viên trong roster"));
+        Map<String, ClubTournamentRoster> rosterById = new HashMap<>();
+        for (ClubTournamentRoster r : allRoster) rosterById.put(r.getId(), r);
 
-        // Reset all roster positions to null, then set this one to SINGLES
+        /** Merge patch: chỉ cập nhật các position có trong body; không xoá chỗ không gửi (draft partial). */
+        Map<String, String> finalAssignment = new LinkedHashMap<>();
+        if (!request.getLineup().isEmpty()) {
+            for (ClubTournamentRoster r : allRoster) {
+                if (r.getPosition() != null && !r.getPosition().isBlank()) {
+                    finalAssignment.put(r.getPosition(), r.getId());
+                }
+            }
+            for (String pos : request.getLineup().keySet()) {
+                if (!validPosMap.containsKey(pos)) {
+                    throw new InvalidDataException("Vị trí không hợp lệ với format giải: " + pos);
+                }
+            }
+            for (Map.Entry<String, String> e : request.getLineup().entrySet()) {
+                String pos = e.getKey();
+                String rosterEntryId = e.getValue();
+                if (rosterEntryId == null || rosterEntryId.isBlank()) {
+                    finalAssignment.remove(pos);
+                    continue;
+                }
+                ClubTournamentRoster entry = rosterById.get(rosterEntryId);
+                if (entry == null) {
+                    throw new InvalidDataException("Roster entry không thuộc CLB này: " + rosterEntryId);
+                }
+                finalAssignment.put(pos, rosterEntryId);
+            }
+        } else {
+            for (ClubTournamentRoster r : allRoster) {
+                if (r.getPosition() != null && !r.getPosition().isBlank()) {
+                    finalAssignment.put(r.getPosition(), r.getId());
+                }
+            }
+        }
+
+        /** Một roster entry chỉ được gán đúng 1 position tại một thời điểm. */
+        Map<String, Long> entryUseCount =
+                finalAssignment.values().stream()
+                        .collect(
+                                java.util.stream.Collectors.groupingBy(
+                                        v -> v, java.util.stream.Collectors.counting()));
+        for (Map.Entry<String, Long> ue : entryUseCount.entrySet()) {
+            if (ue.getValue() > 1) {
+                ClubTournamentRoster r = rosterById.get(ue.getKey());
+                String name = r != null ? r.getClubMember().getAccount().getUserInfo().getFullName() : ue.getKey();
+                throw new InvalidDataException(
+                        "Mỗi thành viên chỉ có thể gán vào một vị trí: " + name);
+            }
+        }
+
+        // Validate: 1 người tối đa 2 rubber/tie (theo các rubber được gán trong lineup)
+        Map<String, java.util.Set<String>> playerRubbers = new HashMap<>();
+        for (Map.Entry<String, String> e : finalAssignment.entrySet()) {
+            ClubLineupHelper.PositionSpec spec = validPosMap.get(e.getKey());
+            String rubberKey = spec.lineType().name() + "_" + spec.lineIndex();
+            playerRubbers.computeIfAbsent(e.getValue(), k -> new java.util.HashSet<>()).add(rubberKey);
+        }
+        for (Map.Entry<String, java.util.Set<String>> e : playerRubbers.entrySet()) {
+            if (e.getValue().size() > 2) {
+                ClubTournamentRoster r = rosterById.get(e.getKey());
+                String name = r != null ? r.getClubMember().getAccount().getUserInfo().getFullName() : e.getKey();
+                throw new InvalidDataException("Thành viên " + name + " được xếp quá 2 ván trong tie");
+            }
+        }
+
+        // Validate: trong cùng rubber doubles, 2 slot không được trùng người
+        for (ClubLineupHelper.PositionSpec spec : validPositions) {
+            if (spec.playerSlot() == null || spec.playerSlot() != 1) continue;
+            String pos1 = spec.position();
+            String pos2 = ClubLineupHelper.formatPosition(spec.lineType(), spec.lineIndex(), 2);
+            String r1 = finalAssignment.get(pos1);
+            String r2 = finalAssignment.get(pos2);
+            if (r1 != null && r1.equals(r2)) {
+                throw new InvalidDataException("Hai người trong cùng ván đôi không được trùng nhau: "
+                        + spec.lineType().getLabel() + " #" + spec.lineIndex());
+            }
+        }
+
+        // Apply: clear tất cả position, set lại theo finalAssignment
         for (ClubTournamentRoster r : allRoster) {
             r.setPosition(null);
         }
-        targetEntry.setPosition("SINGLES");
+        for (Map.Entry<String, String> e : finalAssignment.entrySet()) {
+            ClubTournamentRoster entry = rosterById.get(e.getValue());
+            entry.setPosition(e.getKey());
+        }
         clubTournamentRosterRepository.saveAll(allRoster);
+
+        return buildLineupResponse(participant, allRoster, format, validPositions);
     }
 
-    // =========================================================
-    // 8. LẤY ĐẠI DIỆN HIỆN TẠI
-    // =========================================================
+    /**
+     * Lấy lineup hiện tại + thông tin format.
+     */
+    public ClubLineupResponse getLineup(String participantId) {
+        Account owner = getCurrentAccount();
 
+        ClubTournamentParticipant participant = clubTournamentParticipantRepository.findByIdWithDetails(participantId)
+                .orElseThrow(() -> new InvalidDataException("Không tìm thấy đăng ký CLB"));
+
+        Club club = participant.getClub();
+
+        ClubMember ownerMember = clubMemberRepository.findByClubAndAccountWithAccount(club, owner);
+        if (ownerMember == null || ownerMember.getRole() != ClubMemberRoleEnum.OWNER) {
+            throw new InvalidDataException("Chỉ chủ CLB mới có thể xem lineup");
+        }
+
+        Tournament tournament = participant.getTournament();
+        TeamMatchFormatDTO format = ClubLineupHelper.parseFormat(tournament.getTeamMatchFormat());
+        List<ClubLineupHelper.PositionSpec> positions = ClubLineupHelper.buildPositions(format);
+
+        List<ClubTournamentRoster> roster = clubTournamentRosterRepository
+                .findByClubTournamentParticipant(participant);
+
+        return buildLineupResponse(participant, roster, format, positions);
+    }
+
+    /**
+     * Backward-compat: getRepresentative trả về SINGLES_1 player như API cũ.
+     */
     public ClubMatchParticipantResponse getRepresentative(String participantId) {
         Account owner = getCurrentAccount();
 
@@ -638,18 +780,19 @@ public class ClubTournamentService {
 
         Club club = participant.getClub();
 
-        // Verify owner
         ClubMember ownerMember = clubMemberRepository.findByClubAndAccountWithAccount(club, owner);
         if (ownerMember == null || ownerMember.getRole() != ClubMemberRoleEnum.OWNER) {
             throw new InvalidDataException("Chỉ chủ CLB mới có thể xem đại diện");
         }
 
+        // Tìm theo position mới SINGLES_1 trước, fallback "SINGLES" (legacy)
         Optional<ClubTournamentRoster> rep = clubTournamentRosterRepository
-                .findByClubTournamentParticipant_IdAndPosition(participantId, "SINGLES");
-
+                .findByClubTournamentParticipant_IdAndPositionWithDetails(participantId, "SINGLES_1");
         if (rep.isEmpty()) {
-            return null;
+            rep = clubTournamentRosterRepository
+                    .findByClubTournamentParticipant_IdAndPositionWithDetails(participantId, "SINGLES");
         }
+        if (rep.isEmpty()) return null;
 
         ClubTournamentRoster r = rep.get();
         ClubMember cm = r.getClubMember();
@@ -666,25 +809,70 @@ public class ClubTournamentService {
                 .build();
     }
 
+    private ClubLineupResponse buildLineupResponse(
+            ClubTournamentParticipant participant,
+            List<ClubTournamentRoster> roster,
+            TeamMatchFormatDTO format,
+            List<ClubLineupHelper.PositionSpec> positions) {
+        Map<String, ClubTournamentRoster> byPosition = new HashMap<>();
+        for (ClubTournamentRoster r : roster) {
+            if (r.getPosition() != null) byPosition.put(r.getPosition(), r);
+        }
+
+        List<ClubLineupSlotResponse> slots = new ArrayList<>();
+        int filled = 0;
+        for (ClubLineupHelper.PositionSpec spec : positions) {
+            ClubTournamentRoster entry = byPosition.get(spec.position());
+            ClubLineupSlotResponse.ClubLineupSlotResponseBuilder b = ClubLineupSlotResponse.builder()
+                    .position(spec.position())
+                    .lineType(spec.lineType())
+                    .lineIndex(spec.lineIndex())
+                    .playerSlot(spec.playerSlot());
+            if (entry != null) {
+                Account acc = entry.getClubMember().getAccount();
+                b.rosterEntryId(entry.getId())
+                        .accountId(acc.getId())
+                        .fullName(acc.getUserInfo().getFullName())
+                        .avatarUrl(fileStorageService.getFileUrl(acc.getUserInfo().getAvatarUrl(), "/avatar"));
+                filled++;
+            }
+            slots.add(b.build());
+        }
+
+        Tournament tournament = participant.getTournament();
+        boolean locked = tournament.getStatus() != null
+                && tournament.getStatus() != TournamentStatus.UPCOMING
+                && tournament.getStatus() != TournamentStatus.REGISTRATION_OPEN
+                && tournament.getStatus() != TournamentStatus.REGISTRATION_CLOSED;
+
+        return ClubLineupResponse.builder()
+                .participantId(participant.getId())
+                .clubId(participant.getClub().getId())
+                .clubName(participant.getClub().getName())
+                .format(format)
+                .slots(slots)
+                .filledCount(filled)
+                .totalSlots(positions.size())
+                .complete(filled == positions.size() && positions.size() > 0)
+                .locked(locked)
+                .build();
+    }
+
     // =========================================================
     // 9. ADMIN: TẠO BẢNG ĐẤU CLB
     // =========================================================
 
     @Transactional
     public ClubBracketResponse generateClubBracket(String tournamentId) {
-        // 1. Validate admin
         validateAdmin();
 
-        // 2. Load tournament
         Tournament tournament = tournamentRepository.findById(tournamentId)
                 .orElseThrow(() -> new InvalidDataException("Không tìm thấy giải đấu"));
 
-        // 3. Validate participationType = CLUB
         if (tournament.getParticipationType() != TournamentParticipationTypeEnum.CLUB) {
             throw new InvalidDataException("Giải đấu không phải loại CLUB");
         }
 
-        // 4. Lấy CLB đã APPROVE
         List<ClubTournamentParticipant> approved = clubTournamentParticipantRepository
                 .findByTournamentIdAndStatus(tournamentId, ClubTournamentParticipantStatusEnum.APPROVED);
 
@@ -692,42 +880,41 @@ public class ClubTournamentService {
             throw new InvalidDataException("Cần ít nhất 2 CLB đã duyệt để tạo bảng đấu");
         }
 
-        // 5. Build map participantId → full info
-        Map<String, RepresentativeInfo> repMap = new LinkedHashMap<>();
-        for (ClubTournamentParticipant p : approved) {
-            ClubTournamentRoster rep = clubTournamentRosterRepository
-                    .findByClubTournamentParticipant_IdAndPositionWithDetails(p.getId(), "SINGLES")
-                    .orElseThrow(() -> new InvalidDataException(
-                            "CLB " + p.getClub().getName() + " chưa chọn đại diện đơn nam"));
-
-            ClubMember cm = rep.getClubMember();
-            Account acc = cm.getAccount();
-
-            repMap.put(p.getId(), new RepresentativeInfo(
-                    p.getId(),
-                    p.getClub().getId(),
-                    p.getClub().getName(),
-                    p.getClub().getLogoUrl(),
-                    acc.getId(),
-                    acc.getUserInfo().getFullName(),
-                    acc.getUserInfo().getAvatarUrl()
-            ));
+        // Parse format + sinh danh sách positions cần kiểm tra
+        TeamMatchFormatDTO format = ClubLineupHelper.parseFormat(tournament.getTeamMatchFormat());
+        List<ClubLineupHelper.PositionSpec> positionSpecs = ClubLineupHelper.buildPositions(format);
+        if (positionSpecs.isEmpty()) {
+            throw new InvalidDataException("Tournament chưa có cấu hình teamMatchFormat hợp lệ");
         }
 
-        // 6. Tạo hoặc tìm TournamentCategory MEN_SINGLE
+        // Validate: mọi CLB approved phải có đủ lineup
+        Map<String, Map<String, ClubTournamentRoster>> lineupByClub = new LinkedHashMap<>();
+        for (ClubTournamentParticipant p : approved) {
+            List<ClubTournamentRoster> roster = clubTournamentRosterRepository
+                    .findByClubTournamentParticipant(p);
+            Map<String, ClubTournamentRoster> byPos = new HashMap<>();
+            for (ClubTournamentRoster r : roster) {
+                if (r.getPosition() != null) byPos.put(r.getPosition(), r);
+            }
+            for (ClubLineupHelper.PositionSpec spec : positionSpecs) {
+                if (!byPos.containsKey(spec.position())) {
+                    throw new InvalidDataException(
+                            "CLB \"" + p.getClub().getName() + "\" chưa chọn đủ lineup ("
+                                    + spec.position() + ")");
+                }
+            }
+            lineupByClub.put(p.getId(), byPos);
+        }
+
+        // Tạo / tìm category MEN_SINGLE (vẫn giữ category này làm root cho bracket club, dù chứa nhiều line type)
         BadmintonCategoryEnum singlesCategory = BadmintonCategoryEnum.MEN_SINGLE;
         TournamentCategory category = tournamentCategoryRepository
                 .findByTournamentIdAndCategory(tournamentId, singlesCategory)
-                .orElseGet(() -> {
-                    TournamentCategory newCat = TournamentCategory.builder()
-                            .tournament(tournament)
-                            .category(singlesCategory)
-                            .build();
-                    return tournamentCategoryRepository.save(newCat);
-                });
+                .orElseGet(() -> tournamentCategoryRepository.save(TournamentCategory.builder()
+                        .tournament(tournament)
+                        .category(singlesCategory)
+                        .build()));
 
-        // 7a. Xóa match cũ nếu có (prevent duplicate khi gọi lại)
-        //     Không cho phép tái tạo nếu bất kỳ match nào đã IN_PROGRESS / FINISHED
         List<TournamentMatch> existingMatches = tournamentMatchRepository.findByCategory(category);
         if (!existingMatches.isEmpty()) {
             boolean anyStarted = existingMatches.stream()
@@ -739,41 +926,78 @@ public class ClubTournamentService {
             tournamentMatchRepository.deleteByCategory(category);
         }
 
-        // 7b. Tạo TournamentMatch entries (bracket logic)
-        List<RepresentativeInfo> reps = new ArrayList<>(repMap.values());
-        int n = reps.size();
-        int bracketSize = nextPowerOfTwo(n);
-
-        List<RepresentativeInfo> current = new ArrayList<>(reps);
+        List<ClubTournamentParticipant> participantsList = new ArrayList<>(approved);
+        int bracketSize = nextPowerOfTwo(participantsList.size());
+        List<ClubTournamentParticipant> current = new ArrayList<>(participantsList);
         while (current.size() < bracketSize) current.add(null);
-
         int totalRounds = (int) (Math.log(bracketSize) / Math.log(2));
 
         for (int round = 1; round <= totalRounds; round++) {
-            List<RepresentativeInfo> nextRound = new ArrayList<>();
-            int index = 1;
+            int tieIndex = 1;
+            List<ClubTournamentParticipant> nextRound = new ArrayList<>();
             for (int i = 0; i < current.size(); i += 2) {
-                RepresentativeInfo p1 = current.get(i);
-                RepresentativeInfo p2 = current.get(i + 1);
+                ClubTournamentParticipant club1 = current.get(i);
+                ClubTournamentParticipant club2 = current.get(i + 1);
+                String tieId = java.util.UUID.randomUUID().toString();
 
-                TournamentMatch match = TournamentMatch.builder()
-                        .category(category)
-                        .round(round)
-                        .matchIndex(index++)
-                        .participant1Id(p1 != null ? p1.participantId() : null)
-                        .participant2Id(p2 != null ? p2.participantId() : null)
-                        .participant1Name(p1 != null ? p1.clubName() + " - " + p1.memberName() : null)
-                        .participant2Name(p2 != null ? p2.clubName() + " - " + p2.memberName() : null)
-                        .status(MatchStatus.NOT_STARTED)
-                        .build();
-                tournamentMatchRepository.save(match);
+                for (ClubLineupHelper.PositionSpec spec : positionSpecs) {
+                    TournamentMatch m = TournamentMatch.builder()
+                            .category(category)
+                            .round(round)
+                            .matchIndex(tieIndex)
+                            .tieId(tieId)
+                            .lineType(spec.lineType())
+                            .lineIndex(spec.lineIndex())
+                            .participant1Id(club1 != null ? club1.getId() : null)
+                            .participant2Id(club2 != null ? club2.getId() : null)
+                            .participant1Name(club1 != null
+                                    ? buildRubberDisplayName(club1, spec, lineupByClub.get(club1.getId()))
+                                    : null)
+                            .participant2Name(club2 != null
+                                    ? buildRubberDisplayName(club2, spec, lineupByClub.get(club2.getId()))
+                                    : null)
+                            .status(MatchStatus.NOT_STARTED)
+                            .build();
+                    // Mỗi rubber chỉ persist khi spec là "leader slot" (tránh save 2 lần cho doubles P1/P2)
+                    // Doubles có 2 PositionSpec (P1, P2) nhưng chỉ cần 1 TournamentMatch row /rubber
+                    if (spec.playerSlot() == null || spec.playerSlot() == 1) {
+                        tournamentMatchRepository.save(m);
+                    }
+                }
+                tieIndex++;
                 nextRound.add(null);
             }
             current = nextRound;
         }
 
-        // 8. Trả về club-bracket tree với full info
-        return buildClubBracketResponse(category, tournament, repMap, totalRounds);
+        return buildClubBracketResponse(category, tournament, totalRounds);
+    }
+
+    /**
+     * Build display name cho 1 rubber dùng để hiển thị trên UI.
+     * Singles: "{ClubName} - {Player full name}"
+     * Doubles: "{ClubName} - {P1 name} / {P2 name}"
+     */
+    private String buildRubberDisplayName(
+            ClubTournamentParticipant club,
+            ClubLineupHelper.PositionSpec spec,
+            Map<String, ClubTournamentRoster> lineup) {
+        if (lineup == null) return club.getClub().getName();
+        if (spec.lineType() == ClubLineTypeEnum.SINGLES) {
+            ClubTournamentRoster r = lineup.get(spec.position());
+            String name = r != null
+                    ? r.getClubMember().getAccount().getUserInfo().getFullName()
+                    : "?";
+            return club.getClub().getName() + " - " + name;
+        }
+        // Doubles: lookup cả P1 và P2 (chỉ build 1 lần khi spec là P1)
+        String p1Pos = ClubLineupHelper.formatPosition(spec.lineType(), spec.lineIndex(), 1);
+        String p2Pos = ClubLineupHelper.formatPosition(spec.lineType(), spec.lineIndex(), 2);
+        ClubTournamentRoster r1 = lineup.get(p1Pos);
+        ClubTournamentRoster r2 = lineup.get(p2Pos);
+        String n1 = r1 != null ? r1.getClubMember().getAccount().getUserInfo().getFullName() : "?";
+        String n2 = r2 != null ? r2.getClubMember().getAccount().getUserInfo().getFullName() : "?";
+        return club.getClub().getName() + " - " + n1 + " / " + n2;
     }
 
     // =========================================================
@@ -821,38 +1045,12 @@ public class ClubTournamentService {
 
     private ClubBracketResponse getClubBracketByCategory(TournamentCategory category) {
         Tournament tournament = category.getTournament();
-
-        // Load all approved participants với full fetch
-        List<ClubTournamentParticipant> approved = clubTournamentParticipantRepository
-                .findByTournamentIdAndStatus(tournament.getId(), ClubTournamentParticipantStatusEnum.APPROVED);
-
-        Map<String, RepresentativeInfo> repMap = new LinkedHashMap<>();
-        for (ClubTournamentParticipant p : approved) {
-            Optional<ClubTournamentRoster> rep = clubTournamentRosterRepository
-                    .findByClubTournamentParticipant_IdAndPositionWithDetails(p.getId(), "SINGLES");
-            if (rep.isPresent()) {
-                ClubTournamentRoster r = rep.get();
-                ClubMember cm = r.getClubMember();
-                Account acc = cm.getAccount();
-                repMap.put(p.getId(), new RepresentativeInfo(
-                        p.getId(),
-                        p.getClub().getId(),
-                        p.getClub().getName(),
-                        p.getClub().getLogoUrl(),
-                        acc.getId(),
-                        acc.getUserInfo().getFullName(),
-                        acc.getUserInfo().getAvatarUrl()
-                ));
-            }
-        }
-
         List<TournamentMatch> matches = tournamentMatchRepository.findByCategory(category);
         int totalRounds = matches.stream()
                 .mapToInt(TournamentMatch::getRound)
                 .max()
                 .orElse(0);
-
-        return buildClubBracketResponse(category, tournament, repMap, totalRounds);
+        return buildClubBracketResponse(category, tournament, totalRounds);
     }
 
     // =========================================================
@@ -862,24 +1060,59 @@ public class ClubTournamentService {
     private ClubBracketResponse buildClubBracketResponse(
             TournamentCategory category,
             Tournament tournament,
-            Map<String, RepresentativeInfo> repMap,
             int totalRounds
     ) {
         List<TournamentMatch> matches = tournamentMatchRepository.findByCategory(category);
 
+        // Mọi đăng ký còn hiệu lực (không hủy / từ chối), gồm ELIMINATED — loser sau mỗi tie bị
+        // ELIMINATED nhưng vẫn phải hiển thị tên trên bracket & rubber (không chỉ APPROVED).
+        List<ClubTournamentParticipant> allInTournament =
+                clubTournamentParticipantRepository.findByTournamentId(tournament.getId());
+        Map<String, ClubTournamentParticipant> clubByParticipantId = new HashMap<>();
+        Map<String, Map<String, ClubTournamentRoster>> rosterByClub = new HashMap<>();
+        for (ClubTournamentParticipant p : allInTournament) {
+            ClubTournamentParticipantStatusEnum st = p.getStatus();
+            if (st == ClubTournamentParticipantStatusEnum.CANCELLED
+                    || st == ClubTournamentParticipantStatusEnum.REJECTED) {
+                continue;
+            }
+            clubByParticipantId.put(p.getId(), p);
+            Map<String, ClubTournamentRoster> byPos = new HashMap<>();
+            for (ClubTournamentRoster r : clubTournamentRosterRepository.findByClubTournamentParticipant(p)) {
+                if (r.getPosition() != null) byPos.put(r.getPosition(), r);
+            }
+            rosterByClub.put(p.getId(), byPos);
+        }
+
         List<ClubBracketRoundResponse> rounds = new ArrayList<>();
         for (int roundNum = 1; roundNum <= totalRounds; roundNum++) {
-            int finalRound = roundNum;
-            List<ClubBracketMatchResponse> matchResponses = matches.stream()
-                    .filter(m -> m.getRound() == finalRound)
-                    .sorted(TournamentComparator.comparingInt(TournamentMatch::getMatchIndex))
-                    .map(m -> toClubMatchResponse(m, repMap))
+            final int r = roundNum;
+            List<TournamentMatch> roundMatches = matches.stream()
+                    .filter(m -> m.getRound() == r)
+                    .sorted(java.util.Comparator
+                            .comparing(TournamentMatch::getMatchIndex)
+                            .thenComparing(m -> m.getLineType() == null ? "" : m.getLineType().name())
+                            .thenComparing(m -> m.getLineIndex() == null ? 0 : m.getLineIndex()))
                     .toList();
 
-            rounds.add(ClubBracketRoundResponse.builder()
-                    .round(roundNum)
-                    .matches(matchResponses)
-                    .build());
+            // Detect: matches có tieId không?
+            boolean hasTies = roundMatches.stream().anyMatch(m -> m.getTieId() != null);
+            if (hasTies) {
+                List<ClubBracketTieResponse> ties = buildTiesForRound(roundMatches, clubByParticipantId, rosterByClub);
+                rounds.add(ClubBracketRoundResponse.builder()
+                        .round(roundNum)
+                        .ties(ties)
+                        .build());
+            } else {
+                // Legacy single-match path
+                List<ClubBracketMatchResponse> matchResponses = roundMatches.stream()
+                        .map(m -> toClubMatchResponseLegacy(m, clubByParticipantId, rosterByClub))
+                        .toList();
+                rounds.add(ClubBracketRoundResponse.builder()
+                        .round(roundNum)
+                        .matches(matchResponses)
+                        .build());
+            }
         }
 
         return ClubBracketResponse.builder()
@@ -892,13 +1125,159 @@ public class ClubTournamentService {
                 .build();
     }
 
-    private ClubBracketMatchResponse toClubMatchResponse(
-            TournamentMatch m,
-            Map<String, RepresentativeInfo> repMap
-    ) {
-        ClubMatchParticipantResponse p1 = resolveParticipant(m.getParticipant1Id(), repMap);
-        ClubMatchParticipantResponse p2 = resolveParticipant(m.getParticipant2Id(), repMap);
+    private List<ClubBracketTieResponse> buildTiesForRound(
+            List<TournamentMatch> roundMatches,
+            Map<String, ClubTournamentParticipant> clubByParticipantId,
+            Map<String, Map<String, ClubTournamentRoster>> rosterByClub) {
+        // Group by tieId
+        Map<String, List<TournamentMatch>> grouped = new LinkedHashMap<>();
+        for (TournamentMatch m : roundMatches) {
+            grouped.computeIfAbsent(m.getTieId(), k -> new ArrayList<>()).add(m);
+        }
+        List<ClubBracketTieResponse> result = new ArrayList<>();
+        for (Map.Entry<String, List<TournamentMatch>> e : grouped.entrySet()) {
+            List<TournamentMatch> rubbers = e.getValue();
+            TournamentMatch first = rubbers.get(0);
 
+            ClubTournamentParticipant club1 = first.getParticipant1Id() != null
+                    ? clubByParticipantId.get(first.getParticipant1Id()) : null;
+            ClubTournamentParticipant club2 = first.getParticipant2Id() != null
+                    ? clubByParticipantId.get(first.getParticipant2Id()) : null;
+
+            int club1Wins = 0, club2Wins = 0;
+            int club1Sets = 0, club2Sets = 0;
+            int finishedCount = 0;
+            int notStartedCount = 0;
+            for (TournamentMatch m : rubbers) {
+                if (m.getStatus() == MatchStatus.FINISHED) {
+                    finishedCount++;
+                    if (m.getWinnerId() != null) {
+                        if (m.getWinnerId().equals(first.getParticipant1Id())) club1Wins++;
+                        else if (m.getWinnerId().equals(first.getParticipant2Id())) club2Wins++;
+                    }
+                    // Aggregate sets won
+                    int p1s = 0, p2s = 0;
+                    List<Integer> s1 = m.getSetScoreP1(), s2 = m.getSetScoreP2();
+                    int len = Math.min(s1 == null ? 0 : s1.size(), s2 == null ? 0 : s2.size());
+                    for (int i = 0; i < len; i++) {
+                        if (s1.get(i) > s2.get(i)) p1s++;
+                        else if (s2.get(i) > s1.get(i)) p2s++;
+                    }
+                    club1Sets += p1s;
+                    club2Sets += p2s;
+                }
+                if (m.getStatus() == MatchStatus.NOT_STARTED || m.getStatus() == null) notStartedCount++;
+            }
+            String winnerClubId = null;
+            if (club1Wins > club2Wins) winnerClubId = first.getParticipant1Id();
+            else if (club2Wins > club1Wins) winnerClubId = first.getParticipant2Id();
+            else if (club1Wins == club2Wins && finishedCount == rubbers.size()
+                    && club1Wins > 0 && rubbers.size() > 0) {
+                // Tie-breaker theo set won
+                if (club1Sets > club2Sets) winnerClubId = first.getParticipant1Id();
+                else if (club2Sets > club1Sets) winnerClubId = first.getParticipant2Id();
+            }
+            String tieStatus;
+            if (notStartedCount == rubbers.size()) tieStatus = "NOT_STARTED";
+            else if (winnerClubId != null) tieStatus = "FINISHED";
+            else tieStatus = "IN_PROGRESS";
+
+            ClubBracketTieResponse tieResp = ClubBracketTieResponse.builder()
+                    .tieId(e.getKey())
+                    .round(first.getRound())
+                    .matchIndex(first.getMatchIndex())
+                    .club1(club1 != null ? buildClubInfo(club1) : null)
+                    .club2(club2 != null ? buildClubInfo(club2) : null)
+                    .club1RubberWins(club1Wins)
+                    .club2RubberWins(club2Wins)
+                    .club1SetsWon(club1Sets)
+                    .club2SetsWon(club2Sets)
+                    .winnerClubParticipantId(winnerClubId)
+                    .status(tieStatus)
+                    .rubbers(rubbers.stream()
+                            .map(m -> toRubberResponse(m, rosterByClub))
+                            .toList())
+                    .build();
+            result.add(tieResp);
+        }
+        return result;
+    }
+
+    private ClubBracketRubberResponse toRubberResponse(
+            TournamentMatch m,
+            Map<String, Map<String, ClubTournamentRoster>> rosterByClub) {
+        ClubLineTypeEnum type = m.getLineType();
+        Integer idx = m.getLineIndex();
+        String label = (type != null ? type.getLabel() : "Ván") + (idx != null ? " #" + idx : "");
+
+        return ClubBracketRubberResponse.builder()
+                .matchId(m.getId())
+                .lineType(type)
+                .lineIndex(idx)
+                .label(label)
+                .club1Players(buildRubberPlayers(m.getParticipant1Id(), type, idx, rosterByClub))
+                .club2Players(buildRubberPlayers(m.getParticipant2Id(), type, idx, rosterByClub))
+                .setScoreP1(m.getSetScoreP1())
+                .setScoreP2(m.getSetScoreP2())
+                .winnerClubParticipantId(m.getWinnerId())
+                .status(m.getStatus() != null ? m.getStatus().name() : null)
+                .build();
+    }
+
+    private List<ClubMatchParticipantResponse> buildRubberPlayers(
+            String clubParticipantId,
+            ClubLineTypeEnum type,
+            Integer lineIndex,
+            Map<String, Map<String, ClubTournamentRoster>> rosterByClub) {
+        if (clubParticipantId == null || type == null || lineIndex == null) return List.of();
+        Map<String, ClubTournamentRoster> roster = rosterByClub.get(clubParticipantId);
+        if (roster == null) return List.of();
+        List<ClubMatchParticipantResponse> result = new ArrayList<>();
+        if (type == ClubLineTypeEnum.SINGLES) {
+            ClubTournamentRoster r = roster.get(ClubLineupHelper.formatPosition(type, lineIndex, null));
+            if (r != null) result.add(rosterToParticipant(clubParticipantId, r));
+        } else {
+            for (int slot = 1; slot <= 2; slot++) {
+                ClubTournamentRoster r = roster.get(ClubLineupHelper.formatPosition(type, lineIndex, slot));
+                if (r != null) result.add(rosterToParticipant(clubParticipantId, r));
+            }
+        }
+        return result;
+    }
+
+    private ClubMatchParticipantResponse rosterToParticipant(
+            String clubParticipantId,
+            ClubTournamentRoster r) {
+        Account acc = r.getClubMember().getAccount();
+        ClubTournamentParticipant ctp = r.getClubTournamentParticipant();
+        Club club = ctp.getClub();
+        return ClubMatchParticipantResponse.builder()
+                .participantId(clubParticipantId)
+                .clubId(club.getId())
+                .clubName(club.getName())
+                .clubLogoUrl(fileStorageService.getFileUrl(club.getLogoUrl(), "/club/logo"))
+                .memberId(acc.getId())
+                .memberName(acc.getUserInfo().getFullName())
+                .memberAvatarUrl(fileStorageService.getFileUrl(acc.getUserInfo().getAvatarUrl(), "/avatar"))
+                .build();
+    }
+
+    private ClubMatchParticipantResponse buildClubInfo(ClubTournamentParticipant p) {
+        return ClubMatchParticipantResponse.builder()
+                .participantId(p.getId())
+                .clubId(p.getClub().getId())
+                .clubName(p.getClub().getName())
+                .clubLogoUrl(fileStorageService.getFileUrl(p.getClub().getLogoUrl(), "/club/logo"))
+                .build();
+    }
+
+    /** Legacy mapping cho tournament cũ (1 match/cặp, không có tieId). */
+    private ClubBracketMatchResponse toClubMatchResponseLegacy(
+            TournamentMatch m,
+            Map<String, ClubTournamentParticipant> clubByParticipantId,
+            Map<String, Map<String, ClubTournamentRoster>> rosterByClub) {
+        ClubMatchParticipantResponse p1 = resolveLegacyParticipant(m.getParticipant1Id(), clubByParticipantId, rosterByClub);
+        ClubMatchParticipantResponse p2 = resolveLegacyParticipant(m.getParticipant2Id(), clubByParticipantId, rosterByClub);
         return ClubBracketMatchResponse.builder()
                 .matchId(m.getId())
                 .round(m.getRound())
@@ -913,18 +1292,30 @@ public class ClubTournamentService {
                 .build();
     }
 
-    private ClubMatchParticipantResponse resolveParticipant(String participantId, Map<String, RepresentativeInfo> repMap) {
-        if (participantId == null) return null;
-        RepresentativeInfo info = repMap.get(participantId);
-        if (info == null) return null;
+    private ClubMatchParticipantResponse resolveLegacyParticipant(
+            String clubParticipantId,
+            Map<String, ClubTournamentParticipant> clubByParticipantId,
+            Map<String, Map<String, ClubTournamentRoster>> rosterByClub) {
+        if (clubParticipantId == null) return null;
+        ClubTournamentParticipant p = clubByParticipantId.get(clubParticipantId);
+        if (p == null) return null;
+        Map<String, ClubTournamentRoster> roster = rosterByClub.get(clubParticipantId);
+        ClubTournamentRoster rep = null;
+        if (roster != null) {
+            rep = roster.get("SINGLES_1");
+            if (rep == null) rep = roster.get("SINGLES");
+        }
+        Account acc = rep != null ? rep.getClubMember().getAccount() : null;
         return ClubMatchParticipantResponse.builder()
-                .participantId(info.participantId())
-                .clubId(info.clubId())
-                .clubName(info.clubName())
-                .clubLogoUrl(fileStorageService.getFileUrl(info.clubLogoUrl(), "/club/logo"))
-                .memberId(info.accountId())
-                .memberName(info.memberName())
-                .memberAvatarUrl(fileStorageService.getFileUrl(info.memberAvatarUrl(), "/avatar"))
+                .participantId(p.getId())
+                .clubId(p.getClub().getId())
+                .clubName(p.getClub().getName())
+                .clubLogoUrl(fileStorageService.getFileUrl(p.getClub().getLogoUrl(), "/club/logo"))
+                .memberId(acc != null ? acc.getId() : null)
+                .memberName(acc != null ? acc.getUserInfo().getFullName() : null)
+                .memberAvatarUrl(acc != null
+                        ? fileStorageService.getFileUrl(acc.getUserInfo().getAvatarUrl(), "/avatar")
+                        : null)
                 .build();
     }
 
@@ -934,32 +1325,4 @@ public class ClubTournamentService {
         return p;
     }
 
-    // Inner record
-    private record RepresentativeInfo(
-            String participantId,
-            String clubId,
-            String clubName,
-            String clubLogoUrl,
-            String accountId,
-            String memberName,
-            String memberAvatarUrl
-    ) {}
-
-    // Comparator for TournamentMatch
-    private static class TournamentComparator implements java.util.Comparator<TournamentMatch> {
-        private final java.util.function.ToIntFunction<TournamentMatch> extractor;
-
-        private TournamentComparator(java.util.function.ToIntFunction<TournamentMatch> extractor) {
-            this.extractor = extractor;
-        }
-
-        public static TournamentComparator comparingInt(java.util.function.ToIntFunction<TournamentMatch> extractor) {
-            return new TournamentComparator(extractor);
-        }
-
-        @Override
-        public int compare(TournamentMatch a, TournamentMatch b) {
-            return Integer.compare(extractor.applyAsInt(a), extractor.applyAsInt(b));
-        }
-    }
 }
