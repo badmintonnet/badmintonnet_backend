@@ -30,7 +30,6 @@ public class ClubTournamentParticipantResponse {
     String tournamentId;
     String tournamentName;
     String tournamentSlug;
-    /** Trạng thái giải (UPCOMING…COMPLETED); FE dùng để hiển thị kết quả khi CLB vô địch vẫn APPROVED */
     TournamentStatus tournamentStatus;
 
     // Participation info
