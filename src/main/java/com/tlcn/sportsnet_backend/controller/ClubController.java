@@ -3,15 +3,18 @@ package com.tlcn.sportsnet_backend.controller;
 import com.tlcn.sportsnet_backend.dto.ApiResponse;
 import com.tlcn.sportsnet_backend.dto.club.ClubCreateRequest;
 import com.tlcn.sportsnet_backend.dto.club.JoinClubRequest;
+import com.tlcn.sportsnet_backend.dto.dashboard.DashboardPeriod;
 import com.tlcn.sportsnet_backend.enums.ClubMemberStatusEnum;
 import com.tlcn.sportsnet_backend.service.ClubMemberService;
 import com.tlcn.sportsnet_backend.service.ClubService;
+import com.tlcn.sportsnet_backend.service.DashboardService;
 import com.tlcn.sportsnet_backend.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +25,16 @@ public class ClubController {
     private final ClubService clubService;
     private final FileStorageService fileStorageService;
     private final ClubMemberService clubMemberService;
+    private final DashboardService dashboardService;
+
+    @GetMapping("/{id}/dashboard")
+    public ResponseEntity<?> getClubDashboard(
+            @PathVariable String id,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            @RequestParam(defaultValue = "DAY") DashboardPeriod period) {
+        return ResponseEntity.ok(dashboardService.getClubDashboard(id, from, to, period));
+    }
 
     @GetMapping("/{slug}")
     public ResponseEntity<?> getClubInformation(@PathVariable String slug) {

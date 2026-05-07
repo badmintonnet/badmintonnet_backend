@@ -1,6 +1,7 @@
 package com.tlcn.sportsnet_backend.controller;
 
 import com.tlcn.sportsnet_backend.dto.ApiResponse;
+import com.tlcn.sportsnet_backend.dto.dashboard.DashboardPeriod;
 import com.tlcn.sportsnet_backend.dto.tournament.TournamentCreateRequest;
 import com.tlcn.sportsnet_backend.entity.Club;
 import com.tlcn.sportsnet_backend.entity.Tournament;
@@ -11,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +24,16 @@ public class AdminController {
     private final AdminService adminService;
     private final TournamentService tournamentService;
     private final FileStorageService fileStorageService;
+    private final DashboardService dashboardService;
+
+    @GetMapping("/dashboard/overview")
+    public ResponseEntity<?> getDashboardOverview(
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            @RequestParam(defaultValue = "DAY") DashboardPeriod period) {
+        return ResponseEntity.ok(dashboardService.getAdminOverview(from, to, period));
+    }
+
     @GetMapping("/clubs/all")
     public ResponseEntity<?> getAllClubs(
             @RequestParam(defaultValue = "0") int page,
