@@ -12,5 +12,8 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ClubBracketRoundResponse {
     int round;
+    /** Legacy: matches truyền thống (1 match/cặp). Giữ cho backward compat. */
     List<ClubBracketMatchResponse> matches;
+    /** New: ties (mỗi tie có thể chứa nhiều rubber). */
+    List<ClubBracketTieResponse> ties;
 }

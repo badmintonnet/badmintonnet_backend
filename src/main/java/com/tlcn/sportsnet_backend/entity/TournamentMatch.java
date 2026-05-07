@@ -1,5 +1,6 @@
 package com.tlcn.sportsnet_backend.entity;
 
+import com.tlcn.sportsnet_backend.enums.ClubLineTypeEnum;
 import com.tlcn.sportsnet_backend.enums.MatchStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -54,4 +55,18 @@ public class TournamentMatch {
     LocalDateTime startTime;
     LocalDateTime endTime;
     String note;
+
+    // ========== CLUB DOUBLES (nullable cho tournament cũ / individual) ==========
+    /** ID nhóm các rubber cùng cặp đấu CLB-vs-CLB trong cùng round (UUID). */
+    @Column(name = "tie_id")
+    String tieId;
+
+    /** Loại ván: SINGLES / MEN_DOUBLES / WOMEN_DOUBLES / MIXED_DOUBLES. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "line_type")
+    ClubLineTypeEnum lineType;
+
+    /** Thứ tự ván trong cùng line type (1, 2, 3...). */
+    @Column(name = "line_index")
+    Integer lineIndex;
 }
