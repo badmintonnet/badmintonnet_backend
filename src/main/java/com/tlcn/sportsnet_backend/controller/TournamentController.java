@@ -1,5 +1,7 @@
 package com.tlcn.sportsnet_backend.controller;
 
+import com.tlcn.sportsnet_backend.enums.TournamentParticipationTypeEnum;
+import com.tlcn.sportsnet_backend.repository.TournamentRepository;
 import com.tlcn.sportsnet_backend.service.TournamentCategoryService;
 import com.tlcn.sportsnet_backend.service.TournamentParticipantService;
 import com.tlcn.sportsnet_backend.service.TournamentService;
@@ -19,13 +21,14 @@ public class TournamentController {
     private final TournamentParticipantService participantService;
 
     @GetMapping
-    public ResponseEntity<?> getAllMyClubEventClub(
+    public ResponseEntity<?> getAllTournaments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String content,
+            @RequestParam(required = false) TournamentParticipationTypeEnum participationType,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate organizationDateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate organizationDateTo) {
-        return ResponseEntity.ok(tournamentService.getAllTournament(page, size, content, organizationDateFrom, organizationDateTo));
+        return ResponseEntity.ok(tournamentService.getAllTournament(page, size, participationType, content, organizationDateFrom, organizationDateTo));
     }
 
     @GetMapping("/{slug}")
@@ -57,5 +60,4 @@ public class TournamentController {
     public ResponseEntity<?> getAllPartner(@PathVariable String categoryId) {
         return ResponseEntity.ok(tournamentService.getAllPartner(categoryId));
     }
-
 }

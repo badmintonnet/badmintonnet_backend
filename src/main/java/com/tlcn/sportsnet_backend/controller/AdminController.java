@@ -3,8 +3,6 @@ package com.tlcn.sportsnet_backend.controller;
 import com.tlcn.sportsnet_backend.dto.ApiResponse;
 import com.tlcn.sportsnet_backend.dto.dashboard.DashboardPeriod;
 import com.tlcn.sportsnet_backend.dto.tournament.TournamentCreateRequest;
-import com.tlcn.sportsnet_backend.entity.Club;
-import com.tlcn.sportsnet_backend.entity.Tournament;
 import com.tlcn.sportsnet_backend.enums.ClubStatusEnum;
 import com.tlcn.sportsnet_backend.service.*;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +23,7 @@ public class AdminController {
     private final TournamentService tournamentService;
     private final FileStorageService fileStorageService;
     private final DashboardService dashboardService;
+    private final ClubTournamentService clubTournamentService;
 
     @GetMapping("/dashboard/overview")
     public ResponseEntity<?> getDashboardOverview(
@@ -105,5 +104,18 @@ public class AdminController {
     public ResponseEntity<?> getTournaments(@RequestParam(defaultValue = "0") int page,
                                             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(adminService.getAllAdminTournaments(page, size));
+    }
+
+    // =========================================================
+    // CLUB TOURNAMENT BRACKET
+    // =========================================================
+
+    /**
+     * Admin tạo bảng đấu cho club tournament (đơn nam đại diện)
+     * POST /api/admin/club-tournament/tournaments/{tournamentId}/generate-bracket
+     */
+    @PostMapping("/club-tournament/tournaments/{tournamentId}/generate-bracket")
+    public ResponseEntity<?> generateClubBracket(@PathVariable String tournamentId) {
+        return ResponseEntity.ok(clubTournamentService.generateClubBracket(tournamentId));
     }
 }

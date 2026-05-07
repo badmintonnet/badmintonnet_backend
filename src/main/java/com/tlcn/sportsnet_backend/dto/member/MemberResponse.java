@@ -18,7 +18,8 @@ import java.util.List;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class MemberResponse {
 
-    String id;
+    String clubMemberId;  // ID trong bảng club_members
+    String id;            // Account ID
     String name;
     String avatar;
     @Enumerated(EnumType.STRING)

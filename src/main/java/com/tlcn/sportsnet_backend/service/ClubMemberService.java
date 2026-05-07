@@ -153,6 +153,7 @@ public class ClubMemberService {
                 .stream()
 //                .filter(member -> !member.getAccount().equals(account))
                 .map(clubMember -> MemberResponse.builder()
+                        .clubMemberId(clubMember.getId())
                         .id(clubMember.getAccount().getId())
                         .name(clubMember.getAccount().getUserInfo().getFullName())
                         .avatar(clubMember.getAccount().getUserInfo().getAvatarUrl() != null

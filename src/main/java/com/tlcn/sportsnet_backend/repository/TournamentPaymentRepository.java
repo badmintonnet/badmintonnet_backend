@@ -1,5 +1,6 @@
 package com.tlcn.sportsnet_backend.repository;
 
+import com.tlcn.sportsnet_backend.entity.ClubTournamentParticipant;
 import com.tlcn.sportsnet_backend.entity.TournamentParticipant;
 import com.tlcn.sportsnet_backend.entity.TournamentPayment;
 import com.tlcn.sportsnet_backend.entity.TournamentTeam;
@@ -15,4 +16,8 @@ public interface TournamentPaymentRepository extends JpaRepository<TournamentPay
 
     boolean existsByParticipantAndStatus(TournamentParticipant participant, PaymentStatusEnum status);
     boolean existsByTeamAndStatus(TournamentTeam tournamentTeam, PaymentStatusEnum status);
+
+    // Club tournament payment queries
+    Optional<TournamentPayment> findByClubTournamentParticipant_Id(String participantId);
+    boolean existsByClubTournamentParticipantAndStatus(ClubTournamentParticipant ctp, PaymentStatusEnum status);
 }

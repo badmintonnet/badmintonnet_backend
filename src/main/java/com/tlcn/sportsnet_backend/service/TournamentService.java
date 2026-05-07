@@ -5,6 +5,7 @@ import com.tlcn.sportsnet_backend.dto.tournament.*;
 import com.tlcn.sportsnet_backend.entity.*;
 import com.tlcn.sportsnet_backend.enums.BadmintonCategoryEnum;
 import com.tlcn.sportsnet_backend.enums.TournamentParticipantEnum;
+import com.tlcn.sportsnet_backend.enums.TournamentParticipationTypeEnum;
 import com.tlcn.sportsnet_backend.enums.TournamentStatus;
 import com.tlcn.sportsnet_backend.error.InvalidDataException;
 import com.tlcn.sportsnet_backend.payload.response.PagedResponse;
@@ -55,6 +56,11 @@ public class TournamentService {
             throw new InvalidDataException("Cần chọn cơ sở hoặc nhập địa điểm tùy chỉnh");
         }
 
+        TournamentParticipationTypeEnum participationType =
+                request.getParticipationType() != null
+                        ? request.getParticipationType()
+                        : TournamentParticipationTypeEnum.INDIVIDUAL;
+
         Tournament tournament = Tournament.builder()
                 .name(request.getName())
                 .description(request.getDescription())
@@ -62,43 +68,52 @@ public class TournamentService {
                 .logoUrl(request.getLogoUrl())
                 .location(request.getLocation())
                 .facility(facility)
+                .fee(request.getFee())
                 .registrationEndDate(request.getRegistrationEndDate())
                 .registrationStartDate(request.getRegistrationStartDate())
                 .startDate(request.getStartDate())
                 .endDate(request.getEndDate())
                 .status(TournamentStatus.UPCOMING)
                 .rules(request.getRules())
+                .participationType(participationType)
+                .teamMatchFormat(request.getTeamMatchFormat())
+                .clubRegistrationFee(request.getClubRegistrationFee())
+                .minClubRosterSize(request.getMinClubRosterSize())
+                .maxClubRosterSize(request.getMaxClubRosterSize())
+                .maxClubs(request.getMaxClubs())
                 .build();
         tournament = tournamentRepository.save(tournament);
 
         List<TournamentCategory> tournamentCategories = new ArrayList<>();
 
-        for (TournamentCategoryRequest c : request.getCategories()) {
-            TournamentCategory category = TournamentCategory.builder()
-                    .category(c.getCategoryType())
-                    .tournament(tournament)
-                    .minLevel(c.getMinLevel())
-                    .maxLevel(c.getMaxLevel())
-                    .maxParticipants(c.getMaxParticipants())
-                    .registrationFee(c.getRegistrationFee())
-                    .description(c.getDescription())
-                    .rules(c.getRules())
-                    .firstPrize(c.getFirstPrize())
-                    .secondPrize(c.getSecondPrize())
-                    .thirdPrize(c.getThirdPrize())
-                    .registrationDeadline(request.getRegistrationEndDate())
-                    .build();
+        if (request.getCategories() != null) {
+            for (TournamentCategoryRequest c : request.getCategories()) {
+                TournamentCategory category = TournamentCategory.builder()
+                        .category(c.getCategoryType())
+                        .tournament(tournament)
+                        .minLevel(c.getMinLevel())
+                        .maxLevel(c.getMaxLevel())
+                        .maxParticipants(c.getMaxParticipants())
+                        .registrationFee(c.getRegistrationFee())
+                        .description(c.getDescription())
+                        .rules(c.getRules())
+                        .firstPrize(c.getFirstPrize())
+                        .secondPrize(c.getSecondPrize())
+                        .thirdPrize(c.getThirdPrize())
+                        .build();
 
-            tournamentCategories.add(category);
+                tournamentCategories.add(category);
+            }
+            tournamentCategoryRepository.saveAll(tournamentCategories);
         }
 
-        tournamentCategoryRepository.saveAll(tournamentCategories);
         tournament.setCategories(tournamentCategories);
         return toTournamentResponse(tournament);
     }
     public PagedResponse<TournamentResponse> getAllTournament(
             int page,
             int size,
+            TournamentParticipationTypeEnum participationType,
             String content,
             LocalDate organizationDateFrom,
             LocalDate organizationDateTo
@@ -106,10 +121,12 @@ public class TournamentService {
         Pageable pageable = PageRequest.of(page, size, Sort.by("startDate").descending());
         LocalDateTime startDateFrom = organizationDateFrom != null ? organizationDateFrom.atStartOfDay() : null;
         LocalDateTime startDateTo = organizationDateTo != null ? organizationDateTo.atTime(23, 59, 59) : null;
+        String normalizedContent = (content != null && !content.isBlank()) ? content.trim() : null;
         Page<Tournament> tournamentPage = tournamentRepository.searchTournaments(
                 pageable,
                 TournamentStatus.CANCELLED,
-                content,
+                participationType,
+                normalizedContent,
                 startDateFrom,
                 startDateTo
         );
@@ -154,7 +171,8 @@ public class TournamentService {
     }
 
     public TournamentResponse toTournamentResponse(Tournament tournament) {
-        List<TournamentCategory> tournamentCategories = tournament.getCategories();
+        List<TournamentCategory> tournamentCategories =
+                tournament.getCategories() != null ? tournament.getCategories() : new ArrayList<>();
         List<TournamentCategoryResponse> tournamentCategoryResponses = new ArrayList<>();
         for (TournamentCategory tournamentCategory : tournamentCategories) {
             TournamentCategoryResponse tournamentCategoryResponse = TournamentCategoryResponse.builder()
@@ -169,6 +187,7 @@ public class TournamentService {
                 .slug(tournament.getSlug())
                 .createdBy(tournament.getCreatedBy())
                 .status(tournament.getStatus())
+                .participationType(tournament.getParticipationType())
                 .categories(tournamentCategoryResponses)
                 .bannerUrl(fileStorageService.getFileUrl(tournament.getBannerUrl(), "/tournament"))
                 .logoUrl(fileStorageService.getFileUrl(tournament.getLogoUrl(), "/tournament"))
@@ -181,11 +200,17 @@ public class TournamentService {
                 .id(tournament.getId())
                 .name(tournament.getName())
                 .description(tournament.getDescription())
+                .teamMatchFormat(tournament.getTeamMatchFormat())
+                .clubRegistrationFee(tournament.getClubRegistrationFee())
+                .minClubRosterSize(tournament.getMinClubRosterSize())
+                .maxClubRosterSize(tournament.getMaxClubRosterSize())
+                .maxClubs(tournament.getMaxClubs())
                 .build();
     }
 
     public TournamentDetailResponse tournamentDetailResponse(Tournament tournament, Account account){
-        List<TournamentCategory> tournamentCategories = tournament.getCategories();
+        List<TournamentCategory> tournamentCategories =
+                tournament.getCategories() != null ? tournament.getCategories() : new ArrayList<>();
         List<TournamentCategoryDetailResponse> tournamentCategoryResponses = new ArrayList<>();
         List<TournamentPlayerResponse> tournamentPlayerResponses = new ArrayList<>();
         for (TournamentCategory tournamentCategory : tournamentCategories) {
@@ -250,6 +275,7 @@ public class TournamentService {
                 .slug(tournament.getSlug())
                 .createdBy(tournament.getCreatedBy())
                 .status(tournament.getStatus())
+                .participationType(tournament.getParticipationType())
                 .rules(tournament.getRules())
                 .categories(tournamentCategoryResponses)
                 .bannerUrl(fileStorageService.getFileUrl(tournament.getBannerUrl(), "/tournament"))
@@ -264,6 +290,11 @@ public class TournamentService {
                 .name(tournament.getName())
                 .players(tournamentPlayerResponses)
                 .description(tournament.getDescription())
+                .teamMatchFormat(tournament.getTeamMatchFormat())
+                .clubRegistrationFee(tournament.getClubRegistrationFee())
+                .minClubRosterSize(tournament.getMinClubRosterSize())
+                .maxClubRosterSize(tournament.getMaxClubRosterSize())
+                .maxClubs(tournament.getMaxClubs())
                 .build();
 
     }
@@ -300,7 +331,7 @@ public class TournamentService {
             tournamentRepository.save(tournament);
         }
     }
-//    @Scheduled(cron = "0 * * * * *")
+    //    @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void autoUpdateTournamentStatus() {
         System.out.println("Chạy hàm giải đấu");

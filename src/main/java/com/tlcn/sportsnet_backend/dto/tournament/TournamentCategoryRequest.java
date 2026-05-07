@@ -5,8 +5,7 @@ import com.tlcn.sportsnet_backend.enums.TournamentFormat;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
-import java.time.LocalDateTime;
-import java.util.List;
+import java.math.BigDecimal;
 
 @Getter
 @Setter
@@ -21,7 +20,7 @@ public class TournamentCategoryRequest {
     double maxLevel;   // 0.0 - 5.0
 
     Integer maxParticipants;
-    Double registrationFee;
+    BigDecimal registrationFee;
 
     String description;
 
@@ -32,5 +31,4 @@ public class TournamentCategoryRequest {
     String thirdPrize;
 
     TournamentFormat format;
-
 }

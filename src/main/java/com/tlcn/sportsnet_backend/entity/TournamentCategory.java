@@ -1,14 +1,11 @@
 package com.tlcn.sportsnet_backend.entity;
 
 import com.tlcn.sportsnet_backend.enums.BadmintonCategoryEnum;
-import com.tlcn.sportsnet_backend.enums.TournamentFormat;
-import com.tlcn.sportsnet_backend.util.SecurityUtil;
 import com.tlcn.sportsnet_backend.util.SlugUtil;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -31,7 +28,7 @@ public class TournamentCategory {
     Double maxLevel;
     Integer maxParticipants;
 
-    Double registrationFee; // Lệ phí tham gia
+    BigDecimal registrationFee; // Lệ phí tham gia
 
     @Column(columnDefinition = "TEXT")
     String description; // Mô tả hạng mục
@@ -45,8 +42,6 @@ public class TournamentCategory {
 
     String thirdPrize;
 
-    LocalDateTime registrationDeadline;
-
     @ManyToOne
     @JoinColumn(name = "tournament_id")
     Tournament tournament;
@@ -57,7 +52,7 @@ public class TournamentCategory {
 
     @OneToMany(mappedBy = "category", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
-    List<TournamentTeam> teams = new ArrayList<>();;
+    List<TournamentTeam> teams = new ArrayList<>();
 
     @OneToMany(mappedBy = "category", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -71,12 +66,11 @@ public class TournamentCategory {
 
     @PrePersist
     public void handleBeforeCreate(){
-
         if (this.slug == null || this.slug.isBlank()) {
             String slug = SlugUtil.toSlug(this.category.getLabel());
             String randomSuffix = SlugUtil.randomString(8);
             this.slug = slug + "-" + randomSuffix;
         }
     }
-
 }
+

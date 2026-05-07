@@ -1,6 +1,7 @@
 package com.tlcn.sportsnet_backend.repository;
 
 import com.tlcn.sportsnet_backend.entity.Tournament;
+import com.tlcn.sportsnet_backend.enums.TournamentParticipationTypeEnum;
 import com.tlcn.sportsnet_backend.enums.TournamentStatus;
 import io.micrometer.common.lang.NonNull;
 import io.micrometer.common.lang.NonNullApi;
@@ -25,6 +26,20 @@ public interface TournamentRepository extends JpaRepository<Tournament, String> 
     })
     Page<Tournament> findAllByStatusNot(Pageable pageable, TournamentStatus status);
 
+    // Filter by status + participationType
+    @NonNull
+    @EntityGraph(attributePaths = {
+            "categories",
+            "facility"
+    })
+    @Query("SELECT t FROM Tournament t WHERE t.status != :status " +
+           "AND (:participationType IS NULL OR t.participationType = :participationType)")
+    Page<Tournament> findAllByStatusNotAndParticipationType(
+            Pageable pageable,
+            @Param("status") TournamentStatus status,
+            @Param("participationType") TournamentParticipationTypeEnum participationType
+    );
+
     @NonNull
     Page<Tournament> findAll(Pageable pageable);
 
@@ -37,6 +52,8 @@ public interface TournamentRepository extends JpaRepository<Tournament, String> 
             SELECT t
             FROM Tournament t
             WHERE t.status <> :excludedStatus
+            AND (:participationType IS NULL
+                 OR COALESCE(t.participationType, com.tlcn.sportsnet_backend.enums.TournamentParticipationTypeEnum.INDIVIDUAL) = :participationType)
             AND (:content IS NULL OR TRIM(:content) = ''
                  OR LOWER(t.name) LIKE LOWER(CONCAT('%', :content, '%'))
                  OR LOWER(COALESCE(t.description, '')) LIKE LOWER(CONCAT('%', :content, '%')))
@@ -46,6 +63,7 @@ public interface TournamentRepository extends JpaRepository<Tournament, String> 
     Page<Tournament> searchTournaments(
             Pageable pageable,
             @Param("excludedStatus") TournamentStatus excludedStatus,
+            @Param("participationType") TournamentParticipationTypeEnum participationType,
             @Param("content") String content,
             @Param("organizationDateFrom") LocalDateTime organizationDateFrom,
             @Param("organizationDateTo") LocalDateTime organizationDateTo
@@ -83,4 +101,7 @@ public interface TournamentRepository extends JpaRepository<Tournament, String> 
             Pageable pageable
     );
 
+    // Fetch tournament by ID for Club Tournament
+    @Query("SELECT t FROM Tournament t WHERE t.id = :id")
+    Optional<Tournament> findByIdForClubTournament(@Param("id") String id);
 }

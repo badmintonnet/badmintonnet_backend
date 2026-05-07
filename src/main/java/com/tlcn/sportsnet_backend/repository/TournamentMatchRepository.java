@@ -15,6 +15,8 @@ public interface TournamentMatchRepository extends JpaRepository<TournamentMatch
 
     List<TournamentMatch> findByCategory(TournamentCategory category);
 
+    void deleteByCategory(TournamentCategory category);
+
     @Query("""
     SELECT MAX(m.round)
     FROM TournamentMatch m

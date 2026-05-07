@@ -21,6 +21,15 @@ public class TournamentPaymentController {
         return ResponseEntity.ok(paymentService.createPayment(categoryId, amount));
     }
 
+    // Tạo thanh toán cho Club Tournament
+    @PostMapping("/club/create")
+    public ResponseEntity<?> createClubPayment(
+            @RequestParam String participantId,
+            @RequestParam(required = false) Double amount
+    ) {
+        return ResponseEntity.ok(paymentService.createClubPayment(participantId, amount));
+    }
+
     @GetMapping("/vnpay-return")
     public ResponseEntity<?> vnPayReturn(@RequestParam Map<String,String> params) {
         return ResponseEntity.ok(paymentService.handleReturn(params));

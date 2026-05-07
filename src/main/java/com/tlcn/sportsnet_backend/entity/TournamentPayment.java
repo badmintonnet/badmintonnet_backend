@@ -29,6 +29,11 @@ public class TournamentPayment {
     @JoinColumn(name = "team_id")
     TournamentTeam team;
 
+    // CLB tham gia thanh toán (cho CLUB tournament)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "club_participant_id")
+    ClubTournamentParticipant clubTournamentParticipant;
+
     // Mã giao dịch bạn gửi cho VNPAY (vnp_TxnRef)
     String txnRef;
 

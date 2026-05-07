@@ -94,7 +94,7 @@ public class TournamentCategoryService {
                 .fullName(accountPartner.getUserInfo().getFullName())
                 .skillLevel(playerRatingRepository.findByAccount(accountPartner)
                         .map(PlayerRating::getSkillLevel)
-                        .orElse("Chua c�"))
+                        .orElse("Not rated"))
                 .slug(accountPartner.getUserInfo().getSlug())
                 .build();}
         boolean paid = false;
@@ -134,13 +134,14 @@ public class TournamentCategoryService {
                 .maxLevel(tournamentCategory.getMaxLevel())
                 .maxParticipants(tournamentCategory.getMaxParticipants())
                 .currentParticipantCount(currentCount)
-                .registrationFee( isDouble ? tournamentCategory.getRegistrationFee() * 2 : tournamentCategory.getRegistrationFee())
+                .registrationFee(tournamentCategory.getRegistrationFee())
                 .description(tournamentCategory.getDescription())
                 .rules(tournamentCategory.getRules())
                 .firstPrize(tournamentCategory.getFirstPrize())
                 .secondPrize(tournamentCategory.getSecondPrize())
                 .thirdPrize(tournamentCategory.getThirdPrize())
-                .registrationDeadline(tournamentCategory.getRegistrationDeadline())
+                .registrationStartDate(tournamentCategory.getTournament().getRegistrationStartDate())
+                .registrationEndDate(tournamentCategory.getTournament().getRegistrationEndDate())
                 .isDouble(isDouble)
                 .participantStatus(tournamentParticipant != null ? tournamentParticipant.getStatus() : tournamentTeam!= null ? tournamentTeam.getStatus() : null)
                 .admin(isAdmin)
@@ -166,7 +167,7 @@ public class TournamentCategoryService {
                     .fullName(invitee.getUserInfo().getFullName())
                     .skillLevel(playerRatingRepository.findByAccount(invitee)
                             .map(PlayerRating::getSkillLevel)
-                            .orElse("Chua c�"))
+                            .orElse("Not rated"))
                     .slug(invitee.getUserInfo().getSlug())
                     .mutualFriends(friendshipRepository.countMutualFriends(partnerInvitation.getInviter().getId(), invitee.getId()))
                     .build());
@@ -179,7 +180,7 @@ public class TournamentCategoryService {
                     .fullName(inviter.getUserInfo().getFullName())
                     .skillLevel(playerRatingRepository.findByAccount(inviter)
                             .map(PlayerRating::getSkillLevel)
-                            .orElse("Chua c�"))
+                            .orElse("Not rated"))
                     .slug(inviter.getUserInfo().getSlug())
                     .mutualFriends(friendshipRepository.countMutualFriends(partnerInvitation.getInvitee().getId(), inviter.getId()))
                     .build());
