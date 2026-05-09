@@ -44,7 +44,7 @@ public class SecurityConfig {
             "/", "/api/auth/login", "/api/auth/refresh", "/api/auth/register", "/api/auth/verify" ,"/uploads/**","/api/auth/send-otp/**", "/api/auth/login/firebase","/api/auth/forget/*",
             "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html","/api/clubs/*",
             "/api/clubs/all_public", "/api/club-event/all/public","/api/club-event/*","api/club-event-rating/club/**", "/ws/**", "/api/address/**", "/api/address", "/api/tournaments", "/api/tournaments/*", "/api/facilities/all/filter"
-            , "/api/address/**", "/api/chatbot/**"
+            , "/api/address/**", "/api/chatbot/**", "/api/rankings", "/api/rankings/**"
     };
     private final String[] API_DENIED = {
             "/api/*/upload"

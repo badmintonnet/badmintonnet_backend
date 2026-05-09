@@ -156,7 +156,8 @@ public class ClubService {
             String ward,
             List<String> selectedLevels,
             String reputationSort,
-            List<String> facilityNames
+            List<String> facilityNames,
+            boolean includeJoined
     ) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         Account account = accountRepository.findByEmail(authentication.getName()).orElse(null);
@@ -178,7 +179,7 @@ public class ClubService {
                 ClubSpecification.matchesFacilityNames(facilityNames)
         );
 
-        if (account != null) {
+        if (account != null && !includeJoined) {
             spec = spec.and(ClubSpecification.notJoinedBy(account));
         }
 

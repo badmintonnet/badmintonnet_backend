@@ -18,6 +18,9 @@ public interface AccountRepository extends JpaRepository<Account, String> {
     Optional<Account> findByUserInfo_Slug(String slug);
     boolean existsByEmail(String email);
 
+    @Query("SELECT DISTINCT a FROM Account a LEFT JOIN FETCH a.userInfo")
+    List<Account> findAllWithUserInfo();
+
     @EntityGraph(attributePaths = {"userInfo"})
     @Query("""
             SELECT a FROM Account a

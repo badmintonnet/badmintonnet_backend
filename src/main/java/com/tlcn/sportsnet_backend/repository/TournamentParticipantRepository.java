@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface TournamentParticipantRepository extends JpaRepository<TournamentParticipant, String> {
@@ -17,6 +18,8 @@ public interface TournamentParticipantRepository extends JpaRepository<Tournamen
     int countByCategory(TournamentCategory category);
 
     TournamentParticipant findByAccountAndCategory(Account account, TournamentCategory category);
+
+    Optional<TournamentParticipant> findByAccount_IdAndCategory_Id(String accountId, String categoryId);
 
     Page<TournamentParticipant> findByCategoryId(String categoryId, Pageable pageable);
 

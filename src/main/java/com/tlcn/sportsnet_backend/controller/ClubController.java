@@ -50,8 +50,19 @@ public class ClubController {
             @RequestParam(required = false) String ward,
             @RequestParam(required = false) List<String> selectedLevels,
             @RequestParam(required = false) String reputationSort,
-            @RequestParam(required = false) List<String> facilityNames){
-        return ResponseEntity.ok(clubService.getAllClubPublic(page, size, search, province, ward, selectedLevels, reputationSort, facilityNames));
+            @RequestParam(required = false) List<String> facilityNames,
+            @RequestParam(defaultValue = "false") boolean includeJoined){
+        return ResponseEntity.ok(clubService.getAllClubPublic(
+                page,
+                size,
+                search,
+                province,
+                ward,
+                selectedLevels,
+                reputationSort,
+                facilityNames,
+                includeJoined
+        ));
     }
 
     @GetMapping("/my_clubs/all")
