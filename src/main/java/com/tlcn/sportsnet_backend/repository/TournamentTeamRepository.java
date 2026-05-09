@@ -37,6 +37,8 @@ public interface TournamentTeamRepository extends JpaRepository<TournamentTeam, 
     boolean existsByAccountAndCategory(@Param("categoryId") String categoryId,
                                        @Param("account") Account account
                                        );
+    int countByCategory(TournamentCategory category);
+
     Page<TournamentTeam> findByCategoryId(String categoryId, Pageable pageable);
 
     Page<TournamentTeam> findByCategoryIdAndStatusIn(
