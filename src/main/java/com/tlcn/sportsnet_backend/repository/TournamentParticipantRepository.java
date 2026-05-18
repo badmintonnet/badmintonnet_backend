@@ -6,6 +6,7 @@ import com.tlcn.sportsnet_backend.entity.TournamentParticipant;
 import com.tlcn.sportsnet_backend.enums.TournamentParticipantEnum;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -20,6 +21,12 @@ public interface TournamentParticipantRepository extends JpaRepository<Tournamen
     TournamentParticipant findByAccountAndCategory(Account account, TournamentCategory category);
 
     Optional<TournamentParticipant> findByAccount_IdAndCategory_Id(String accountId, String categoryId);
+
+    @EntityGraph(attributePaths = {
+            "category",
+            "category.tournament"
+    })
+    List<TournamentParticipant> findTop20ByAccount_IdOrderByCreatedAtDesc(String accountId);
 
     Page<TournamentParticipant> findByCategoryId(String categoryId, Pageable pageable);
 

@@ -27,6 +27,12 @@ public interface ClubMemberRepository extends JpaRepository<ClubMember, String> 
     // Fetch voi account va userInfo
     @Query("SELECT cm FROM ClubMember cm LEFT JOIN FETCH cm.account a LEFT JOIN FETCH a.userInfo WHERE cm.club = :club AND cm.account = :account")
     ClubMember findByClubAndAccountWithAccount(@Param("club") Club club, @Param("account") Account account);
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {
+            "club",
+            "club.tags",
+            "club.facility"
+    })
+    List<ClubMember> findByAccountAndStatus(Account account, ClubMemberStatusEnum status);
     @Query("SELECT cm FROM ClubMember cm WHERE cm.club.id = :clubId")
     Page<ClubMember> findPagedByClubId(String clubId, Pageable pageable);
     @Query("""

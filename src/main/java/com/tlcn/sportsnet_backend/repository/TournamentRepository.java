@@ -101,6 +101,22 @@ public interface TournamentRepository extends JpaRepository<Tournament, String> 
             Pageable pageable
     );
 
+    @EntityGraph(attributePaths = {
+            "facility",
+            "categories"
+    })
+    @Query("""
+            SELECT DISTINCT t FROM Tournament t
+            WHERE t.status NOT IN :excludedStatuses
+              AND t.endDate > :now
+            ORDER BY t.startDate ASC
+            """)
+    List<Tournament> findRecommendationCandidates(
+            @Param("excludedStatuses") List<TournamentStatus> excludedStatuses,
+            @Param("now") LocalDateTime now,
+            Pageable pageable
+    );
+
     // Fetch tournament by ID for Club Tournament
     @Query("SELECT t FROM Tournament t WHERE t.id = :id")
     Optional<Tournament> findByIdForClubTournament(@Param("id") String id);

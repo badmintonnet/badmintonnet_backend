@@ -107,6 +107,25 @@ public interface ClubEventRepository extends JpaRepository<ClubEvent, String>, J
             Pageable pageable
     );
 
+    @EntityGraph(attributePaths = {
+            "participants",
+            "club",
+            "club.tags",
+            "facility",
+            "categories"
+    })
+    @Query("""
+            SELECT DISTINCT e FROM ClubEvent e
+            WHERE e.status = :status
+              AND e.deadline > :now
+            ORDER BY e.startTime ASC
+            """)
+    List<ClubEvent> findRecommendationCandidates(
+            @Param("status") EventStatusEnum status,
+            @Param("now") LocalDateTime now,
+            Pageable pageable
+    );
+
 
 
 }
