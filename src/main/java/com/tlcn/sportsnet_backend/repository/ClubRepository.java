@@ -96,4 +96,20 @@ public interface ClubRepository extends JpaRepository<Club, String>, JpaSpecific
             @Param("longitude") double longitude,
             Pageable pageable
     );
+
+    @EntityGraph(attributePaths = {
+            "facility",
+            "tags"
+    })
+    @Query("""
+            SELECT c FROM Club c
+            WHERE c.visibility = :visibility
+              AND c.status = :status
+            ORDER BY COALESCE(c.reputation, 0.0) DESC, c.createdAt DESC
+            """)
+    List<Club> findRecommendationCandidates(
+            @Param("visibility") ClubVisibilityEnum visibility,
+            @Param("status") ClubStatusEnum status,
+            Pageable pageable
+    );
 }

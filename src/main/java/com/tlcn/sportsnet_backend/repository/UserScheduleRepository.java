@@ -20,6 +20,7 @@ import java.util.Optional;
 public interface UserScheduleRepository extends JpaRepository<UserSchedule, String> {
     UserSchedule findByAccountIdAndClubEventId(String accountId, String clubEventId);
     Page<UserSchedule> findByAccountId(String accountId, Pageable pageable);
+    List<UserSchedule> findTop30ByAccount_IdOrderByStartTimeDesc(String accountId);
 
     Optional<UserSchedule> findByAccountAndClubEvent(Account account, ClubEvent clubEvent);
 

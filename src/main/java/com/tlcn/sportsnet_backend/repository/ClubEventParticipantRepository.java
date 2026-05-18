@@ -29,6 +29,17 @@ public interface ClubEventParticipantRepository extends JpaRepository<ClubEventP
     })
     Page<ClubEventParticipant> findByParticipant_Id(String accountId, Pageable pageable);
 
+    @EntityGraph(attributePaths = {
+            "clubEvent",
+            "clubEvent.categories",
+            "clubEvent.club",
+            "clubEvent.club.tags"
+    })
+    List<ClubEventParticipant> findTop30ByParticipant_IdAndStatusNotOrderByJoinedAtDesc(
+            String accountId,
+            ClubEventParticipantStatusEnum status
+    );
+
     @Query("SELECT COUNT(p) " +
             "FROM ClubEventParticipant p " +
             "WHERE p.clubEvent.club.id = :clubId " +
