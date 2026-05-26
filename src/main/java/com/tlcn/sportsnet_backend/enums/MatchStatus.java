@@ -4,5 +4,6 @@ public enum MatchStatus {
     NOT_STARTED,
     IN_PROGRESS,
     FINISHED,
-    CANCELLED
+    CANCELLED,
+    SKIPPED   // Auto-skipped khi tie đã có winner (CLB đối phương đạt majority rubber)
 }

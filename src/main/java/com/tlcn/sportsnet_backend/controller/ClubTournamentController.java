@@ -1,6 +1,7 @@
 package com.tlcn.sportsnet_backend.controller;
 
 import com.tlcn.sportsnet_backend.dto.club_tournament.ClubRepresentativeRequest;
+import com.tlcn.sportsnet_backend.dto.club_tournament.ClubLineupRequest;
 import com.tlcn.sportsnet_backend.dto.club_tournament.ClubTournamentRegistrationRequest;
 import com.tlcn.sportsnet_backend.dto.club_tournament.UpdateRosterRequest;
 import com.tlcn.sportsnet_backend.enums.ClubTournamentParticipantStatusEnum;
@@ -119,6 +120,26 @@ public class ClubTournamentController {
     // =========================================================
     // ĐẠI DIỆN & BẢNG ĐẤU
     // =========================================================
+
+    /**
+     * Owner CLB đặt / cập nhật lineup (partial merge): body { "lineup": { "SINGLES_1": "...", ... } }
+     * PUT /api/club-tournament/participants/{participantId}/lineup
+     */
+    @PutMapping("/participants/{participantId}/lineup")
+    public ResponseEntity<?> setLineup(
+            @PathVariable String participantId,
+            @RequestBody ClubLineupRequest request) {
+        return ResponseEntity.ok(clubTournamentService.setLineup(participantId, request));
+    }
+
+    /**
+     * Owner CLB xem format + các slot và trạng thái đã chọn.
+     * GET /api/club-tournament/participants/{participantId}/lineup
+     */
+    @GetMapping("/participants/{participantId}/lineup")
+    public ResponseEntity<?> getLineup(@PathVariable String participantId) {
+        return ResponseEntity.ok(clubTournamentService.getLineup(participantId));
+    }
 
     /**
      * Owner CLB chọn đại diện đơn nam
