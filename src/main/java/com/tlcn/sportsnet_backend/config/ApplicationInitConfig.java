@@ -46,6 +46,7 @@ public class ApplicationInitConfig implements ApplicationRunner {
                     .email("admin@gmail.com")
                     .password(passwordEncoder.encode("123456"))
                     .roles(Set.of(adminRole))
+                    .verified(true)
                     .build();
 
             admin = accountRepository.save(admin);

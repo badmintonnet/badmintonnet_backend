@@ -65,6 +65,9 @@ public class AccountService {
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .roles(Set.of(role))
+                // Tạm thời cho phép account mới đăng nhập ngay để chạy automation fake data.
+                // Đổi lại false hoặc bỏ dòng này khi bật lại flow OTP.
+                .verified(true)
                 .reputationScore(100)
                 .build();
 

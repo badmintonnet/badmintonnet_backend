@@ -322,7 +322,9 @@ public class AuthController {
     public ResponseEntity<?> registerAccount(@RequestBody AccountRegisterRequest registerRequest
                                              ) {
         Account account = accountService.registerAccount(registerRequest);
-        OTP otp = otpService.createOTP(account);
+        // Tạm thời bypass OTP cho automation fake data.
+        // Bật lại dòng dưới nếu muốn đăng ký phải xác thực OTP trước khi đăng nhập.
+        // OTP otp = otpService.createOTP(account);
        return ResponseEntity.ok("Đăng ký thành công");
     }
 
