@@ -1,13 +1,10 @@
 package com.tlcn.sportsnet_backend.service;
 
-import com.tlcn.sportsnet_backend.dto.club.ClubResponse;
-import com.tlcn.sportsnet_backend.dto.club_event.ClubEventResponse;
 import com.tlcn.sportsnet_backend.dto.schedule.ScheduleResponse;
 import com.tlcn.sportsnet_backend.entity.Account;
 import com.tlcn.sportsnet_backend.entity.ClubEvent;
 import com.tlcn.sportsnet_backend.entity.ClubEventParticipant;
 import com.tlcn.sportsnet_backend.entity.UserSchedule;
-import com.tlcn.sportsnet_backend.enums.ClubEventParticipantStatusEnum;
 import com.tlcn.sportsnet_backend.enums.StatusScheduleEnum;
 import com.tlcn.sportsnet_backend.error.InvalidDataException;
 import com.tlcn.sportsnet_backend.payload.response.PagedResponse;
@@ -20,12 +17,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -84,16 +81,11 @@ public class UserScheduleService {
     }
 
     public ScheduleResponse toScheduleResponse(UserSchedule userSchedule, Account account) {
-        LocalDateTime now = LocalDateTime.now();
         StatusScheduleEnum oldStatus = userSchedule.getStatus();
         ClubEvent clubEvent = userSchedule.getClubEvent();
         ClubEventParticipant clubEventParticipant = participantRepository.findByClubEvent_IdAndParticipant(clubEvent.getId(), account).orElseThrow(() -> new InvalidDataException("Participant not found"));
 
-        StatusScheduleEnum statusScheduleEnum = clubEventParticipant.getStatus().toStatusEnum();
-
-        if(now.isBefore(userSchedule.getEndTime()) && now.isAfter(userSchedule.getStartTime()) || now.isEqual(userSchedule.getEndTime())  || now.isEqual(userSchedule.getStartTime()) ) {
-            statusScheduleEnum = StatusScheduleEnum.ONGOING;
-        }
+        StatusScheduleEnum statusScheduleEnum = resolveScheduleStatus(userSchedule, clubEventParticipant);
         if(oldStatus != statusScheduleEnum) {
             userSchedule.setStatus(statusScheduleEnum);
             userScheduleRepository.save(userSchedule);
@@ -107,5 +99,42 @@ public class UserScheduleService {
                 .name(userSchedule.getName())
                 .slug(clubEvent.getSlug())
                 .build();
+    }
+
+    @Scheduled(cron = "0 * * * * *")
+    @Transactional
+    public void autoUpdateScheduleStatus() {
+        List<UserSchedule> schedules = userScheduleRepository.findAll();
+
+        for (UserSchedule schedule : schedules) {
+            ClubEvent clubEvent = schedule.getClubEvent();
+            Account account = schedule.getAccount();
+            ClubEventParticipant participant = participantRepository
+                    .findByClubEvent_IdAndParticipant(clubEvent.getId(), account)
+                    .orElse(null);
+
+            if (participant == null) {
+                continue;
+            }
+
+            StatusScheduleEnum newStatus = resolveScheduleStatus(schedule, participant);
+            if (schedule.getStatus() != newStatus) {
+                schedule.setStatus(newStatus);
+                userScheduleRepository.save(schedule);
+            }
+        }
+    }
+
+    private StatusScheduleEnum resolveScheduleStatus(UserSchedule userSchedule, ClubEventParticipant clubEventParticipant) {
+        LocalDateTime now = LocalDateTime.now();
+        StatusScheduleEnum status = clubEventParticipant.getStatus().toStatusEnum();
+
+        if (now.isBefore(userSchedule.getEndTime()) && now.isAfter(userSchedule.getStartTime())
+                || now.isEqual(userSchedule.getEndTime())
+                || now.isEqual(userSchedule.getStartTime())) {
+            status = StatusScheduleEnum.ONGOING;
+        }
+
+        return status;
     }
 }

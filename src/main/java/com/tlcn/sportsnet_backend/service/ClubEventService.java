@@ -485,7 +485,7 @@ public class ClubEventService {
     }
 
 
-//    @Scheduled(cron = "0 * * * * *")
+    @Scheduled(cron = "0 * * * * *")
     @Transactional
     public void autoUpdateEventStatus() {
         List<EventStatusEnum> excludedStatuses = List.of(

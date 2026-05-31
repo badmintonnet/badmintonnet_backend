@@ -1,9 +1,7 @@
 package com.tlcn.sportsnet_backend.service;
 
-import com.tlcn.sportsnet_backend.dto.account.AccountAdminResponse;
 import com.tlcn.sportsnet_backend.dto.facility.FacilityCreateRequest;
 import com.tlcn.sportsnet_backend.dto.facility.FacilityResponse;
-import com.tlcn.sportsnet_backend.entity.Account;
 import com.tlcn.sportsnet_backend.entity.Facility;
 import com.tlcn.sportsnet_backend.error.InvalidDataException;
 import com.tlcn.sportsnet_backend.payload.response.PagedResponse;
@@ -14,6 +12,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -71,6 +70,22 @@ public class FacilityService {
         Facility facility = facilityRepository.findById(id).orElseThrow(() -> new InvalidDataException("Facility not found"));
         fileStorageService.deleteFile(facility.getImage(), "/facility");
         facilityRepository.delete(facility);
+    }
+
+    @Transactional
+    public FacilityResponse updateFacilityImage(String id, String image) {
+        Facility facility = facilityRepository.findById(id)
+                .orElseThrow(() -> new InvalidDataException("Facility not found"));
+        String oldImage = facility.getImage();
+
+        facility.setImage(image);
+        Facility savedFacility = facilityRepository.save(facility);
+
+        if (oldImage != null && !oldImage.isBlank() && !oldImage.equals(image)) {
+            fileStorageService.deleteFile(oldImage, "/facility");
+        }
+
+        return toFacilityResponse(savedFacility);
     }
 
     public List<FacilityResponse> getAllFacilitiesFilter() {

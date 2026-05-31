@@ -2,7 +2,6 @@ package com.tlcn.sportsnet_backend.controller;
 
 import com.tlcn.sportsnet_backend.dto.ApiResponse;
 import com.tlcn.sportsnet_backend.dto.facility.FacilityCreateRequest;
-import com.tlcn.sportsnet_backend.entity.Facility;
 import com.tlcn.sportsnet_backend.service.FacilityService;
 import com.tlcn.sportsnet_backend.service.FileStorageService;
 import lombok.RequiredArgsConstructor;
@@ -49,14 +48,32 @@ public class FacilityController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) String facilityId) {
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body("File is empty");
         }
 
         String uploadedFile = fileStorageService.storeFile(file, "/facility");
 
+        if (facilityId != null && !facilityId.isBlank()) {
+            return ResponseEntity.ok(facilityService.updateFacilityImage(facilityId, uploadedFile));
+        }
+
         return ResponseEntity.ok()
                 .body(ApiResponse.success(Map.of("fileName", uploadedFile)));
+    }
+
+    @PostMapping("/{id}/upload")
+    public ResponseEntity<?> uploadFacilityImage(
+            @PathVariable String id,
+            @RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body("File is empty");
+        }
+
+        String uploadedFile = fileStorageService.storeFile(file, "/facility");
+        return ResponseEntity.ok(facilityService.updateFacilityImage(id, uploadedFile));
     }
 }
