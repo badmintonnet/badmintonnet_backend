@@ -339,7 +339,7 @@ public class AuthController {
         if(!updatePassword.getNewPassword().equals(updatePassword.getConfirmPassword())) {
             throw new InvalidDataException("Mật khẩu xác thực không khớp");
         }
-        account.setPassword(passwordEncoder.encode(updatePassword.getPassword()));
+        account.setPassword(passwordEncoder.encode(updatePassword.getNewPassword()));
         accountRepository.save(account);
         return ResponseEntity.ok("Thay đổi mật khẩu thành công");
 
