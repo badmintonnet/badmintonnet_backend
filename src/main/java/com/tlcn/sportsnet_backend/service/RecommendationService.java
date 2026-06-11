@@ -399,11 +399,15 @@ public class RecommendationService {
 
         double distanceKm = distance.get();
         addReason(reasons, "Cách bạn khoảng " + GeoDistanceUtil.round2(distanceKm) + " km");
-        if (distanceKm <= 3) return 24;
-        if (distanceKm <= 7) return 20;
-        if (distanceKm <= 15) return 14;
-        if (distanceKm <= 30) return 8;
-        return 3;
+        if (distanceKm <= 3) return 32;
+        if (distanceKm <= 7) return 28;
+        if (distanceKm <= 15) return 20;
+        if (distanceKm <= 30) return 12;
+        if (distanceKm <= 60) return 2;
+        if (distanceKm <= 100) return -8;
+        if (distanceKm <= 300) return -18;
+        addReason(reasons, "Khoảng cách quá xa nên điểm phù hợp bị giảm mạnh");
+        return -35;
     }
 
     private double timeScore(LocalDateTime startTime, UserPreference preference, List<String> reasons) {
