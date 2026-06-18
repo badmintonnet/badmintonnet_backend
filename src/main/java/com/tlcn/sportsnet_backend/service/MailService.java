@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -16,6 +17,7 @@ public class MailService {
     /**
      * Gửi email chứa mã OTP đến người dùng
      */
+    @Async
     public void sendOtpEmail(String toEmail, String otpCode) {
         String subject = "Mã xác thực OTP - BadmintonNet";
 
@@ -176,8 +178,7 @@ public class MailService {
             System.out.println("Gửi email: " + toEmail);
             mailSender.send(mimeMessage);
         } catch (MessagingException e) {
-            System.err.println("Lỗi khi gửi email: " + e.getMessage());
-            throw new RuntimeException("Không thể gửi email", e);
+            System.err.println("Lỗi khi gửi email OTP tới " + toEmail + ": " + e.getMessage());
         }
     }
 
@@ -185,6 +186,7 @@ public class MailService {
     /**
      * Gửi email thông báo reset mật khẩu
      */
+    @Async
     public void sendResetPasswordEmail(String toEmail, String newPassword) {
         String subject = "Khôi phục mật khẩu - BadmintonNet";
 
@@ -248,8 +250,7 @@ public class MailService {
             System.out.println("Gửi email reset mật khẩu: " + toEmail);
             mailSender.send(mimeMessage);
         } catch (MessagingException e) {
-            System.err.println("Lỗi khi gửi email reset mật khẩu: " + e.getMessage());
-            throw new RuntimeException("Không thể gửi email reset mật khẩu", e);
+            System.err.println("Lỗi khi gửi email reset mật khẩu tới " + toEmail + ": " + e.getMessage());
         }
     }
 
