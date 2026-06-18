@@ -42,7 +42,6 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
 
   # pageable start with 1
   data:
