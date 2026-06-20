@@ -17,18 +17,6 @@ spring:
     multipart:
       max-file-size: 100MB
       max-request-size: 100MB
-  mail:
-    host: ${MAIL_HOST:smtp.gmail.com}
-    port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-    default-encoding: UTF-8
 
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/sports_net}
@@ -89,6 +77,10 @@ vnpay:
   returnUrl: ${VNPAY_RETURN_URL:http://localhost:3000/payment/vnpay-return}
   payUrl: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
   client-ip: ${VNPAY_CLIENT_IP:127.0.0.1}
+
+sendgrid:
+  api-key: ${SENDGRID_API_KEY:}
+  from-email: ${SENDGRID_FROM_EMAIL:badmintonnetvn@gmail.com}
 
 openapi:
   server-url: ${OPENAPI_SERVER_URL:http://localhost:8080}
