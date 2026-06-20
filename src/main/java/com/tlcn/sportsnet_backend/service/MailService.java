@@ -1,26 +1,30 @@
 package com.tlcn.sportsnet_backend.service;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import com.sendgrid.Method;
+import com.sendgrid.Request;
+import com.sendgrid.Response;
+import com.sendgrid.SendGrid;
+import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Content;
+import com.sendgrid.helpers.mail.objects.Email;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+
 @Service
 public class MailService {
-    @Autowired
-    private JavaMailSender mailSender;
 
-    /**
-     * Gửi email chứa mã OTP đến người dùng
-     */
+    @Value("${sendgrid.api-key}")
+    private String sendgridApiKey;
+
+    @Value("${sendgrid.from-email}")
+    private String fromEmail;
+
     @Async
     public void sendOtpEmail(String toEmail, String otpCode) {
         String subject = "Mã xác thực OTP - BadmintonNet";
-
         String htmlContent = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -41,12 +45,10 @@ public class MailService {
       margin: 40px auto;
       background: #ffffff;
       border-radius: 18px;
-      border: 1.5px solid #dbeafe; /* viền ngoài */
+      border: 1.5px solid #dbeafe;
       box-shadow: 0 6px 20px rgba(0,0,0,0.08);
       overflow: hidden;
     }
-
-    /* HEADER */
     .header {
       background: linear-gradient(135deg, #005bea, #00c6fb);
       text-align: center;
@@ -68,8 +70,6 @@ public class MailService {
       margin-top: 10px;
       opacity: 0.95;
     }
-
-    /* CONTENT */
     .content {
       padding: 44px 34px;
       text-align: center;
@@ -86,8 +86,6 @@ public class MailService {
       line-height: 1.6;
       margin-bottom: 18px;
     }
-
-    /* OTP BOX */
     .otp-box {
       background: #eef6ff;
       border: 2px dashed #3b82f6;
@@ -111,8 +109,6 @@ public class MailService {
       letter-spacing: 12px;
       text-shadow: 0 1px 3px rgba(29,78,216,0.3);
     }
-
-    /* NOTE */
     .note {
       background: #f1f5ff;
       border-left: 4px solid #2563eb;
@@ -123,8 +119,6 @@ public class MailService {
       text-align: left;
       line-height: 1.5;
     }
-
-    /* FOOTER */
     .footer {
       background: #f8fafc;
       border-top: 1px solid #e5e7eb;
@@ -144,12 +138,10 @@ public class MailService {
       <h1>BadmintonNet</h1>
       <p>Cộng đồng cầu lông Việt Nam</p>
     </div>
-
     <div class="content">
       <h2>Mã xác minh OTP của bạn</h2>
       <p>Xin chào,</p>
       <p>Để hoàn tất quá trình xác thực, vui lòng sử dụng mã OTP bên dưới:</p>
-
       <div class="otp-box">
         <div class="otp-label">Mã OTP</div>
         <div class="otp-code">%s</div>
@@ -158,7 +150,6 @@ public class MailService {
         Mã có hiệu lực trong 30 phút. Vui lòng không chia sẻ mã này với bất kỳ ai để đảm bảo an toàn cho tài khoản của bạn.
       </div>
     </div>
-
     <div class="footer">
       © 2025 <strong>BadmintonNet</strong> — Nền tảng cộng đồng cầu lông Việt Nam
     </div>
@@ -166,30 +157,12 @@ public class MailService {
 </body>
 </html>
 """.formatted(otpCode);
-        try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-
-            helper.setTo(toEmail);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            helper.setFrom("bdmntnnt@gmail.com");
-
-            System.out.println("Gửi email: " + toEmail);
-            mailSender.send(mimeMessage);
-        } catch (MessagingException e) {
-            System.err.println("Lỗi khi gửi email OTP tới " + toEmail + ": " + e.getMessage());
-        }
+        sendEmail(toEmail, subject, htmlContent);
     }
 
-
-    /**
-     * Gửi email thông báo reset mật khẩu
-     */
     @Async
     public void sendResetPasswordEmail(String toEmail, String newPassword) {
         String subject = "Khôi phục mật khẩu - BadmintonNet";
-
         String htmlContent = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -237,21 +210,25 @@ public class MailService {
 </body>
 </html>
 """.formatted(newPassword);
-
-        try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
-
-            helper.setTo(toEmail);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            helper.setFrom("bdmntnnt@gmail.com");
-
-            System.out.println("Gửi email reset mật khẩu: " + toEmail);
-            mailSender.send(mimeMessage);
-        } catch (MessagingException e) {
-            System.err.println("Lỗi khi gửi email reset mật khẩu tới " + toEmail + ": " + e.getMessage());
-        }
+        sendEmail(toEmail, subject, htmlContent);
     }
 
+    private void sendEmail(String toEmail, String subject, String htmlContent) {
+        Email from = new Email(fromEmail);
+        Email to = new Email(toEmail);
+        Content content = new Content("text/html", htmlContent);
+        Mail mail = new Mail(from, subject, to, content);
+
+        SendGrid sg = new SendGrid(sendgridApiKey);
+        Request request = new Request();
+        try {
+            request.setMethod(Method.POST);
+            request.setEndpoint("mail/send");
+            request.setBody(mail.build());
+            Response response = sg.api(request);
+            System.out.println("Gửi email tới " + toEmail + " - Status: " + response.getStatusCode());
+        } catch (IOException e) {
+            System.err.println("Lỗi khi gửi email tới " + toEmail + ": " + e.getMessage());
+        }
+    }
 }
