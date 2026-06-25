@@ -49,6 +49,7 @@ public class ClubService {
     private final FacilityRepository facilityRepository;
     private final ClubInvitationRepository clubInvitationRepository;
     private final ClubWarningRepository clubWarningRepository;
+    private final AdminNotificationService adminNotificationService;
 
     public ClubResponse createClub(ClubCreateRequest request) {
 
@@ -90,6 +91,13 @@ public class ClubService {
                 .build();
 
         club = clubRepository.save(club);
+
+        adminNotificationService.notifyAllAdmins(
+                "CLB mới cần phê duyệt",
+                "Người dùng " + owner.getEmail() + " vừa tạo CLB \"" + club.getName() + "\". Đang chờ admin phê duyệt.",
+                "/admin/clubs"
+        );
+
         ClubMember clubMember = ClubMember.builder()
                 .club(club)
                 .account(owner)
