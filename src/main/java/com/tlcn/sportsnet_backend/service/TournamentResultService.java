@@ -22,6 +22,7 @@ public class TournamentResultService {
     private final TournamentMatchRepository matchRepo;
     private final TournamentParticipantRepository participantRepo;
     private final TournamentTeamRepository teamRepo;
+    private final AdminNotificationService adminNotificationService;
 
     public TournamentResultResponse getTournamentResults(String tournamentId) {
 
@@ -100,6 +101,12 @@ public class TournamentResultService {
 
             generateResultForCategory(category);
         }
+
+        adminNotificationService.notifyAllAdmins(
+                "Kết quả giải đấu đã được tổng hợp",
+                "Kết quả giải đấu \"" + tournament.getName() + "\" đã được tổng hợp xong và sẵn sàng để xem xét.",
+                "/admin/tournaments"
+        );
     }
 
     public CategoryResultResponse getCategoryResult(String categoryId) {

@@ -29,6 +29,8 @@ public class ClubWarningService {
     private final ClubMemberRepository clubMemberRepository;
     private final ClubWarningRepository clubWarningRepository;
     private final NotificationService notificationService;
+    private final AdminNotificationService adminNotificationService;
+
     public Object createClubWarning(ClubWarningRequest request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
@@ -48,6 +50,11 @@ public class ClubWarningService {
                 .build();
          clubWarningRepository.save(clubWarning);
          notificationService.sendToAccount(account.getEmail(),"Cảnh báo từ "+club.getName(), request.getReason(), "/my-clubs/"+club.getSlug());
+         adminNotificationService.notifyAllAdmins(
+                 "Thành viên bị cảnh báo",
+                 "CLB \"" + club.getName() + "\" đã gửi cảnh báo cho " + account.getEmail() + ": " + request.getReason(),
+                 "/admin/clubs"
+         );
         return "Warning thành công";
 
     }

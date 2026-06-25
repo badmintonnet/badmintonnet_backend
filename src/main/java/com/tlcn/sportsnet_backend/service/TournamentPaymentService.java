@@ -32,6 +32,7 @@ public class TournamentPaymentService {
     private final AccountRepository accountRepo;
     private final TournamentCategoryRepository categoryRepo;
     private final ClubTournamentParticipantRepository clubParticipantRepo;
+    private final AdminNotificationService adminNotificationService;
 
     @Value("${vnpay.client-ip:127.0.0.1}")
     private String vnpClientIp;
@@ -152,6 +153,17 @@ public class TournamentPaymentService {
                 ClubTournamentParticipant cp = payment.getClubTournamentParticipant();
                 cp.setStatus(ClubTournamentParticipantStatusEnum.PENDING);
                 clubParticipantRepo.save(cp);
+                adminNotificationService.notifyAllAdmins(
+                        "Thanh toán giải đấu thất bại",
+                        "CLB \"" + cp.getClub().getName() + "\" thanh toán thất bại cho giải \"" + cp.getTournament().getName() + "\". Mã lỗi VNPay: " + responseCode,
+                        "/admin/tournaments"
+                );
+            } else {
+                adminNotificationService.notifyAllAdmins(
+                        "Thanh toán thất bại",
+                        "Giao dịch " + txnRef + " thất bại. Mã lỗi VNPay: " + responseCode,
+                        "/admin/tournaments"
+                );
             }
         }
 
