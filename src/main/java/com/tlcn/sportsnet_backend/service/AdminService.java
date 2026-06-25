@@ -42,6 +42,9 @@ public class AdminService {
     private final ClubEventService clubEventService;
     private final FileStorageService fileStorageService;
     private final TournamentRepository tournamentRepository;
+    private final NotificationService notificationService;
+    private final AdminNotificationService adminNotificationService;
+
     public PagedResponse<ClubAdminResponse> getAllClubs(int page, int size) {
         checkAccount();
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt") ));
@@ -78,6 +81,18 @@ public class AdminService {
         }
 
         clubRepository.save(club);
+
+        notificationService.sendToAccount(
+                club.getOwner().getEmail(),
+                "Trạng thái CLB thay đổi",
+                "CLB \"" + club.getName() + "\" của bạn đã được cập nhật sang trạng thái: " + newStatus.name(),
+                "/clubs/" + club.getSlug()
+        );
+        adminNotificationService.notifyAllAdmins(
+                "Trạng thái CLB thay đổi",
+                "CLB \"" + club.getName() + "\" đã được cập nhật sang: " + newStatus.name(),
+                "/admin/clubs"
+        );
     }
     public void deleteClub(String id) {
         checkAccount();
@@ -231,6 +246,19 @@ public class AdminService {
         Account account = accountRepository.findById(id).orElseThrow(() -> new InvalidDataException("Account not found") );
         account.setEnabled(!account.isEnabled());
         account = accountRepository.save(account);
+
+        String trangThai = account.isEnabled() ? "kích hoạt" : "tạm khóa";
+        notificationService.sendToAccount(
+                account.getEmail(),
+                "Thông báo về tài khoản của bạn",
+                "Tài khoản của bạn đã được " + trangThai + " bởi quản trị viên.",
+                "/profile"
+        );
+        adminNotificationService.notifyAllAdmins(
+                "Tài khoản bị " + trangThai,
+                "Tài khoản " + account.getEmail() + " đã được " + trangThai,
+                "/admin/users"
+        );
     }
 
     public PagedResponse<TournamentAdminResponse> getAllAdminTournaments(int page, int size) {

@@ -41,6 +41,7 @@ public class ClubTournamentService {
     private final PlayerRatingRepository playerRatingRepository;
     private final FileStorageService fileStorageService;
     private final NotificationService notificationService;
+    private final AdminNotificationService adminNotificationService;
 
     // =========================================================
     // 1. ĐĂNG KÝ CLB THAM GIA TOURNAMENT
@@ -126,7 +127,11 @@ public class ClubTournamentService {
         // Build response - fetch data eagerly to avoid lazy loading issues
         ClubTournamentParticipantResponse response = buildFullResponse(participant);
 
-        // TODO: Gửi thông báo cho các thành viên trong roster sau
+        adminNotificationService.notifyAllAdmins(
+                "CLB đăng ký tham gia giải đấu",
+                "CLB \"" + club.getName() + "\" vừa đăng ký tham gia giải đấu \"" + tournament.getName() + "\". Trạng thái: PENDING.",
+                "/admin/tournaments"
+        );
 
         return response;
     }

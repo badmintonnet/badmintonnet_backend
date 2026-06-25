@@ -24,6 +24,7 @@ public class ClubEventCancellationService {
     private final AccountRepository accountRepository;
     private final FileStorageService fileStorageService;
     private final ReputationHistoryRepository reputationHistoryRepository;
+    private final AdminNotificationService adminNotificationService;
 
     /**
      * Duyệt hoặc từ chối yêu cầu hủy muộn
@@ -92,6 +93,11 @@ public class ClubEventCancellationService {
                     "Yêu cầu hủy tham gia bị từ chối",
                     "Yêu cầu hủy của bạn cho hoạt động \"" + event.getTitle() + "\" đã bị từ chối. Bạn bị trừ 10 điểm uy tín.",
                     "/events/" + event.getSlug()
+            );
+            adminNotificationService.notifyAllAdmins(
+                    "Hủy tham gia bị từ chối — trừ uy tín",
+                    "CLB \"" + event.getClub().getName() + "\" từ chối hủy của " + requester.getEmail() + " tại hoạt động \"" + event.getTitle() + "\". Trừ 10 điểm uy tín.",
+                    "/admin/users"
             );
         }
     }
